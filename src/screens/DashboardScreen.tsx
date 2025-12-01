@@ -1,86 +1,103 @@
-import React from "react";
+// src/screens/DashboardScreen.tsx - SIMPLE VERSION
+import React, { useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  SafeAreaView,
-  Platform,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function DashboardScreen() {
+  const { user, isLoading, signOut } = useAuth();
+
+  useEffect(() => {
+    // Any initialization logic here
+  }, []);
+
+  const handleSignOut = async () => {
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Sign Out", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (error) {
+              console.error('Sign out error:', error);
+              Alert.alert("Error", "Failed to sign out. Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2AB576" />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <TopBar />
+        <View style={styles.authContainer}>
+          <Text style={styles.authTitle}>Welcome to Detour</Text>
+          <Text style={styles.authSubtitle}>Please sign in to access your dashboard</Text>
+          <TouchableOpacity 
+            style={styles.authButton}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.authButtonText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+        <BottomNav />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <TopBar />
       
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Stats Cards */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>$1,250</Text>
-            <Text style={styles.statLabel}>Today's Earnings</Text>
-          </View>
+      <View style={styles.content}>
+        {/* Welcome Message - Simple */}
+        <View style={styles.welcomeContainer}>
+          <Text style={styles.welcomeTitle}>Welcome</Text>
+          <Text style={styles.userName}>{user.full_name}</Text>
+          <Text style={styles.userEmail}>{user.email}</Text>
           
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>18</Text>
-            <Text style={styles.statLabel}>Completed Trips</Text>
-          </View>
+          {/* Email Verification Status */}
+          {!user.email_verified && (
+            <View style={styles.verifyContainer}>
+              <Text style={styles.verifyText}>
+                ⚠️ Please verify your email address
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Quick Actions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.actionsGrid}>
-            <View style={styles.actionItem}>
-              <View style={[styles.actionIcon, { backgroundColor: "#FFE8E8" }]}>
-                <Text style={[styles.actionEmoji, { color: "#FF6B6B" }]}>🚗</Text>
-              </View>
-              <Text style={styles.actionText}>Start Trip</Text>
-            </View>
-            
-            <View style={styles.actionItem}>
-              <View style={[styles.actionIcon, { backgroundColor: "#E8F5FF" }]}>
-                <Text style={[styles.actionEmoji, { color: "#4D96FF" }]}>💰</Text>
-              </View>
-              <Text style={styles.actionText}>Withdraw</Text>
-            </View>
-            
-            <View style={styles.actionItem}>
-              <View style={[styles.actionIcon, { backgroundColor: "#E8FFED" }]}>
-                <Text style={[styles.actionEmoji, { color: "#2AB576" }]}>🎯</Text>
-              </View>
-              <Text style={styles.actionText}>Goals</Text>
-            </View>
-            
-            <View style={styles.actionItem}>
-              <View style={[styles.actionIcon, { backgroundColor: "#FFF5E8" }]}>
-                <Text style={[styles.actionEmoji, { color: "#FFA500" }]}>📊</Text>
-              </View>
-              <Text style={styles.actionText}>Analytics</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Recent Activity */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <View style={styles.activityList}>
-            {["Airport Trip - $85", "Downtown - $42", "University - $38", "Shopping Mall - $55"].map((item, index) => (
-              <View key={index} style={styles.activityItem}>
-                <View style={styles.activityDot} />
-                <Text style={styles.activityText}>{item}</Text>
-                <Text style={styles.activityTime}>2h ago</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </ScrollView>
+        {/* Simple Log Out Button */}
+        <TouchableOpacity 
+          style={styles.signOutButton}
+          onPress={handleSignOut}
+        >
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
       
       <BottomNav />
     </View>
@@ -92,116 +109,100 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8F9FA",
   },
-  content: {
+  loadingContainer: {
     flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 30,
-  },
-  statsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
-    marginBottom: 30,
-  },
-  statCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    width: "48%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  statValue: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#2AB576",
-    marginBottom: 5,
-  },
-  statLabel: {
-    fontSize: 14,
-    color: "#666",
-    fontWeight: "500",
-  },
-  section: {
-    marginBottom: 30,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#333",
-    marginBottom: 15,
-  },
-  actionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-  actionItem: {
-    width: "48%",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 15,
-    alignItems: "center",
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  actionIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#F8F9FA",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#666",
+  },
+  authContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 40,
+  },
+  authTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  authSubtitle: {
+    fontSize: 16,
+    color: "#666",
+    marginBottom: 30,
+    textAlign: "center",
+  },
+  authButton: {
+    backgroundColor: "#2AB576",
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 12,
+    width: "100%",
+    alignItems: "center",
+  },
+  authButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  content: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  welcomeContainer: {
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  welcomeTitle: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#000000",
     marginBottom: 10,
   },
-  actionEmoji: {
+  userName: {
     fontSize: 24,
-  },
-  actionText: {
-    fontSize: 14,
     fontWeight: "600",
     color: "#333",
+    marginBottom: 5,
   },
-  activityList: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+  userEmail: {
+    fontSize: 16,
+    color: "#666",
+    marginBottom: 20,
   },
-  activityItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+  verifyContainer: {
+    backgroundColor: "#FFF5E8",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 10,
   },
-  activityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#2AB576",
-    marginRight: 12,
-  },
-  activityText: {
-    flex: 1,
-    fontSize: 15,
-    color: "#333",
+  verifyText: {
+    color: "#FFA500",
+    fontSize: 14,
     fontWeight: "500",
   },
-  activityTime: {
-    fontSize: 13,
-    color: "#999",
+  signOutButton: {
+    backgroundColor: "#FFE8E8",
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 200,
+  },
+  signOutText: {
+    color: "#FF6B6B",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

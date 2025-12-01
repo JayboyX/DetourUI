@@ -1,5 +1,5 @@
-// src/screens/SignUpScreen.tsx - COMPLETE UPDATED VERSION
-import React, { useState } from 'react';
+// src/screens/SignUpScreen.tsx - FIXED VERSION (No RefreshControl)
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,18 +8,20 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
-  Alert,
   ActivityIndicator,
+  Dimensions,
+  ScrollView,
 } from 'react-native';
 import { useAuth, validatePassword } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import Checkbox from 'expo-checkbox';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const { height } = Dimensions.get('window');
 
 export default function SignUpScreen() {
-  const navigation = useNavigation<NavigationProp<any>>();
+  const navigation = useNavigation();
   
   // Form state
   const [fullName, setFullName] = useState('');
@@ -27,10 +29,14 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [termsAgreed, setTermsAgreed] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showVerificationPending, setShowVerificationPending] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isResending, setIsResending] = useState(false);
+  const verificationCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // Password validation state
   const [passwordValidation, setPasswordValidation] = useState<{
@@ -38,69 +44,118 @@ export default function SignUpScreen() {
     requirements: string[];
   }>({ isValid: false, requirements: [] });
   
-  const { signUp } = useAuth();
+  const { signUp, checkVerification, resendVerification, signIn } = useAuth();
+
+  // Check for pending verification when screen loads
+  useEffect(() => {
+    checkPendingVerification();
+    
+    return () => {
+      if (verificationCheckTimerRef.current) {
+        clearInterval(verificationCheckTimerRef.current);
+      }
+    };
+  }, []);
+
+  const checkPendingVerification = async () => {
+    try {
+      const pending = await AsyncStorage.getItem('pending_verification_email');
+      if (pending) {
+        setPendingEmail(pending);
+        setShowVerificationPending(true);
+        startVerificationCheckInterval(pending);
+      }
+    } catch (error) {
+      console.error('Error checking pending verification:', error);
+    }
+  };
+
+  const startVerificationCheckInterval = (emailToCheck: string) => {
+    if (verificationCheckTimerRef.current) {
+      clearInterval(verificationCheckTimerRef.current);
+    }
+
+    const timer = setInterval(() => {
+      checkVerificationStatus(emailToCheck);
+    }, 5000);
+
+    verificationCheckTimerRef.current = timer;
+    checkVerificationStatus(emailToCheck);
+  };
+
+  const checkVerificationStatus = async (emailToCheck: string) => {
+    try {
+      const result = await checkVerification(emailToCheck);
+      if (result.success && result.email_verified) {
+        await AsyncStorage.removeItem('pending_verification_email');
+        if (verificationCheckTimerRef.current) {
+          clearInterval(verificationCheckTimerRef.current);
+        }
+        
+        // Auto-login with stored credentials
+        const storedPassword = await AsyncStorage.getItem('temp_password');
+        if (storedPassword) {
+          const loginResult = await signIn({
+            email: emailToCheck,
+            password: storedPassword
+          });
+          
+          if (loginResult.success) {
+            // AuthContext will handle navigation to dashboard
+            await AsyncStorage.removeItem('temp_password');
+          } else {
+            setErrorMessage('✅ Email verified! Please login manually.');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking verification status:', error);
+    }
+  };
 
   const validateForm = () => {
-    // Validate full name
     if (!fullName.trim()) {
-      Alert.alert('Error', 'Please enter your full name');
+      setErrorMessage('Please enter your full name');
       return false;
     }
     
     if (fullName.trim().length < 2) {
-      Alert.alert('Error', 'Full name must be at least 2 characters');
+      setErrorMessage('Full name must be at least 2 characters');
       return false;
     }
     
-    // Validate email
     if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email');
+      setErrorMessage('Please enter your email');
       return false;
     }
     
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      setErrorMessage('Please enter a valid email address');
       return false;
     }
     
-    // Validate password
     if (!password) {
-      Alert.alert('Error', 'Please enter a password');
+      setErrorMessage('Please enter a password');
       return false;
     }
     
     if (!passwordValidation.isValid) {
-      Alert.alert(
-        'Password Requirements',
-        'Please meet all password requirements:\n\n' +
-        passwordValidation.requirements
-          .filter(req => req.startsWith('❌'))
-          .map(req => req.replace('❌ ', ''))
-          .join('\n')
-      );
+      const errors = passwordValidation.requirements
+        .filter(req => req.startsWith('❌'))
+        .map(req => req.replace('❌ ', ''));
+      setErrorMessage(`Password requirements:\n${errors.join('\n')}`);
       return false;
     }
     
-    // Validate confirm password
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      setErrorMessage('Passwords do not match');
       return false;
     }
     
-    // Validate terms
     if (!termsAgreed) {
-      Alert.alert('Error', 'You must agree to the Terms & Conditions');
+      setErrorMessage('You must agree to the Terms & Conditions');
       return false;
-    }
-    
-    // Optional: Validate phone number
-    if (phoneNumber && phoneNumber.trim() !== '') {
-      const phoneRegex = /^[+]?[0-9\s\-\(\)]{10,}$/;
-      if (!phoneRegex.test(phoneNumber.replace(/\s/g, ''))) {
-        Alert.alert('Error', 'Please enter a valid phone number');
-        return false;
-      }
     }
     
     return true;
@@ -110,340 +165,435 @@ export default function SignUpScreen() {
     setPassword(text);
     const validation = validatePassword(text);
     setPasswordValidation(validation);
+    setErrorMessage('');
   };
 
   const handleSignUp = async () => {
     if (!validateForm()) return;
     
     setIsLoading(true);
+    setErrorMessage('');
     
     const signUpData = {
       full_name: fullName.trim(),
       email: email.trim().toLowerCase(),
       password: password,
       terms_agreed: termsAgreed,
-      phone_number: phoneNumber.trim() || undefined,
     };
     
     const result = await signUp(signUpData);
-    setIsLoading(false);
     
     if (result.success) {
-      Alert.alert(
-        'Success!',
-        result.message || 'Account created successfully! Please check your email for verification.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate to email verification screen
-              navigation.navigate('EmailVerification', { 
-                email: email.trim().toLowerCase(),
-                userId: result.data?.user_id 
-              });
-            },
-          },
-        ]
-      );
+      const userEmail = email.trim().toLowerCase();
+      await AsyncStorage.setItem('pending_verification_email', userEmail);
+      await AsyncStorage.setItem('temp_password', password);
       
-      // Clear form
+      setPendingEmail(userEmail);
+      setShowVerificationPending(true);
+      
+      startVerificationCheckInterval(userEmail);
+      
       setFullName('');
       setEmail('');
       setPassword('');
       setConfirmPassword('');
-      setPhoneNumber('');
       setTermsAgreed(false);
       setPasswordValidation({ isValid: false, requirements: [] });
+      
     } else {
-      Alert.alert(
-        'Sign Up Failed',
-        result.error || 'Something went wrong. Please try again.',
-        [{ text: 'OK' }]
-      );
+      setErrorMessage(result.error || 'Failed to create account');
+    }
+    
+    setIsLoading(false);
+  };
+
+  const handleResendVerification = async () => {
+    if (!pendingEmail || isResending) return;
+    
+    setIsResending(true);
+    
+    try {
+      const result = await resendVerification(pendingEmail);
+      
+      if (!result.success) {
+        setErrorMessage(result.message || 'Failed to resend email');
+      } else {
+        setErrorMessage('✅ Verification email resent!');
+        setTimeout(() => setErrorMessage(''), 3000);
+      }
+    } catch (error: any) {
+      setErrorMessage('Failed to resend verification email');
+    } finally {
+      setIsResending(false);
     }
   };
 
-  const goToLogin = () => {
+  const handleGoToLogin = () => {
     navigation.navigate('Login');
   };
 
-  const formatPhoneNumber = (text: string) => {
-    // Remove all non-digit characters
-    const cleaned = text.replace(/\D/g, '');
-    
-    // Format as (XXX) XXX-XXXX
-    let formatted = cleaned;
-    if (cleaned.length > 3 && cleaned.length <= 6) {
-      formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3)}`;
-    } else if (cleaned.length > 6) {
-      formatted = `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6, 10)}`;
-    }
-    
-    setPhoneNumber(formatted);
-  };
-
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Back Button at Top */}
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={goToLogin}
-          disabled={isLoading}
-        >
-          <Ionicons name="arrow-back" size={24} color="#000000" />
-        </TouchableOpacity>
+        <View style={styles.content}>
+          {/* Verification Screen */}
+          {showVerificationPending ? (
+            <View style={styles.verificationContainer}>
+              <View style={styles.centeredContent}>
+                <View style={styles.verificationHeader}>
+                  <View style={styles.verificationIcon}>
+                    <Ionicons name="mail-outline" size={60} color="#2AB576" />
+                    <View style={styles.verificationBadge}>
+                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                    </View>
+                  </View>
+                  <Text style={styles.verificationTitle}>Check Your Email</Text>
+                  <Text style={styles.verificationSubtitle}>
+                    We've sent a verification link to:
+                  </Text>
+                  <Text style={styles.verificationEmail}>{pendingEmail}</Text>
+                </View>
 
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Main Content */}
-          <View style={styles.contentContainer}>
-            {/* Header */}
-            <View style={styles.header}>
-              <View style={styles.titleContainer}>
-                <Text style={styles.title}>Join Detour</Text>
-                <Text style={styles.subtitle}>Create your driver account</Text>
+                {/* Error/Success Message */}
+                {errorMessage ? (
+                  <View style={[
+                    styles.messageContainer,
+                    errorMessage.includes('✅') ? styles.messageSuccess : styles.messageError
+                  ]}>
+                    <Ionicons 
+                      name={errorMessage.includes('✅') ? "checkmark-circle" : "warning"} 
+                      size={18} 
+                      color={errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B"} 
+                    />
+                    <Text style={[
+                      styles.messageText,
+                      { color: errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B" }
+                    ]}>
+                      {errorMessage}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {/* Resend Text (not a button) */}
+                <View style={styles.resendTextContainer}>
+                  <Text style={styles.resendText}>
+                    Didn't get the email?{' '}
+                    <Text style={styles.resendLink} onPress={handleResendVerification}>
+                      {isResending ? 'Sending...' : 'Click here to receive it again'}
+                    </Text>
+                  </Text>
+                  {isResending && <ActivityIndicator color="#2AB576" size="small" style={styles.resendSpinner} />}
+                </View>
               </View>
             </View>
-
-            {/* Form */}
-            <View style={styles.form}>
-              {/* Full Name */}
-              <View style={styles.inputContainer}>
-                <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Full Name *"
-                  value={fullName}
-                  onChangeText={setFullName}
-                  editable={!isLoading}
-                  autoCapitalize="words"
-                  placeholderTextColor="#999"
-                  maxLength={50}
-                />
+          ) : (
+            /* Regular Sign Up Form */
+            <>
+              <View style={styles.header}>
+                <Text style={styles.title}>Create Account</Text>
+                <Text style={styles.subtitle}>Join Detour as a driver</Text>
               </View>
 
-              {/* Email */}
-              <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Email Address *"
-                  value={email}
-                  onChangeText={setEmail}
-                  editable={!isLoading}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  placeholderTextColor="#999"
-                  autoComplete="email"
-                />
-              </View>
-
-              {/* Phone Number (Optional) */}
-              <View style={styles.inputContainer}>
-                <Ionicons name="call-outline" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Phone Number (Optional)"
-                  value={phoneNumber}
-                  onChangeText={formatPhoneNumber}
-                  editable={!isLoading}
-                  keyboardType="phone-pad"
-                  placeholderTextColor="#999"
-                  maxLength={14}
-                />
-              </View>
-
-              {/* Password */}
-              <View style={styles.inputContainer}>
-                <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Password *"
-                  value={password}
-                  onChangeText={handlePasswordChange}
-                  secureTextEntry={!showPassword}
-                  editable={!isLoading}
-                  placeholderTextColor="#999"
-                  autoComplete="password-new"
-                />
-                <TouchableOpacity 
-                  style={styles.eyeButton}
-                  onPress={() => setShowPassword(!showPassword)}
-                  disabled={isLoading}
-                >
+              {/* Error Message */}
+              {errorMessage ? (
+                <View style={[
+                  styles.messageContainer,
+                  errorMessage.includes('✅') ? styles.messageSuccess : styles.messageError
+                ]}>
                   <Ionicons 
-                    name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                    size={20} 
-                    color="#666" 
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Password Requirements */}
-              {password.length > 0 && (
-                <View style={styles.passwordRequirements}>
-                  <Text style={styles.passwordRequirementsTitle}>Password Requirements:</Text>
-                  {passwordValidation.requirements.map((req, index) => (
-                    <Text 
-                      key={index} 
-                      style={[
-                        styles.passwordRequirement,
-                        req.startsWith('✅') ? styles.requirementMet : styles.requirementNotMet
-                      ]}
-                    >
-                      {req}
-                    </Text>
-                  ))}
-                </View>
-              )}
-
-              {/* Confirm Password */}
-              <View style={styles.inputContainer}>
-                <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Confirm Password *"
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry={!showConfirmPassword}
-                  editable={!isLoading}
-                  placeholderTextColor="#999"
-                  autoComplete="password-new"
-                />
-                <TouchableOpacity 
-                  style={styles.eyeButton}
-                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  disabled={isLoading}
-                >
-                  <Ionicons 
-                    name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
-                    size={20} 
-                    color="#666" 
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Password Match Indicator */}
-              {confirmPassword.length > 0 && password.length > 0 && (
-                <View style={styles.passwordMatchContainer}>
-                  <Ionicons 
-                    name={password === confirmPassword ? "checkmark-circle" : "close-circle"} 
-                    size={16} 
-                    color={password === confirmPassword ? "#2AB576" : "#FF6B6B"} 
+                    name={errorMessage.includes('✅') ? "checkmark-circle" : "warning"} 
+                    size={18} 
+                    color={errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B"} 
                   />
                   <Text style={[
-                    styles.passwordMatchText,
-                    { color: password === confirmPassword ? "#2AB576" : "#FF6B6B" }
+                    styles.messageText,
+                    { color: errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B" }
                   ]}>
-                    {password === confirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                    {errorMessage}
                   </Text>
                 </View>
-              )}
+              ) : null}
 
-              {/* Terms & Conditions */}
-              <View style={styles.termsContainer}>
-                <Checkbox
-                  style={styles.checkbox}
-                  value={termsAgreed}
-                  onValueChange={setTermsAgreed}
-                  color={termsAgreed ? '#2AB576' : undefined}
-                  disabled={isLoading}
-                />
-                <TouchableOpacity 
-                  style={styles.termsTextContainer}
-                  onPress={() => setTermsAgreed(!termsAgreed)}
-                  disabled={isLoading}
-                >
-                  <Text style={styles.termsText}>
-                    I agree to the{' '}
-                    <Text style={styles.termsLink}>Terms & Conditions</Text>
-                    {' '}and{' '}
-                    <Text style={styles.termsLink}>Privacy Policy</Text>
-                    {' '}*
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <View style={styles.form}>
+                {/* Full Name */}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Full Name *"
+                    value={fullName}
+                    onChangeText={setFullName}
+                    editable={!isLoading}
+                    autoCapitalize="words"
+                    placeholderTextColor="#999"
+                  />
+                </View>
 
-              {/* Required Fields Note */}
-              <Text style={styles.requiredNote}>* Required fields</Text>
+                {/* Email */}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Email Address *"
+                    value={email}
+                    onChangeText={setEmail}
+                    editable={!isLoading}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    placeholderTextColor="#999"
+                  />
+                </View>
 
-              {/* Sign Up Button */}
-              <TouchableOpacity
-                style={[
-                  styles.signUpButton, 
-                  (!passwordValidation.isValid || !termsAgreed) && styles.signUpButtonDisabled
-                ]}
-                onPress={handleSignUp}
-                disabled={isLoading || !passwordValidation.isValid || !termsAgreed}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.signUpButtonText}>Create Account</Text>
+                {/* Password */}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Password *"
+                    value={password}
+                    onChangeText={handlePasswordChange}
+                    secureTextEntry={!showPassword}
+                    editable={!isLoading}
+                    placeholderTextColor="#999"
+                  />
+                  <TouchableOpacity 
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Ionicons 
+                      name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                      size={20} 
+                      color="#666" 
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Password Requirements */}
+                {password.length > 0 && (
+                  <View style={styles.passwordRequirements}>
+                    {passwordValidation.requirements.map((req, index) => (
+                      <Text 
+                        key={index} 
+                        style={[
+                          styles.passwordRequirement,
+                          req.startsWith('✅') ? styles.requirementMet : styles.requirementNotMet
+                        ]}
+                      >
+                        {req}
+                      </Text>
+                    ))}
+                  </View>
                 )}
-              </TouchableOpacity>
 
-              {/* Already have account */}
-              <View style={styles.loginContainer}>
-                <Text style={styles.loginText}>Already have an account? </Text>
-                <TouchableOpacity onPress={goToLogin} disabled={isLoading}>
-                  <Text style={styles.loginLink}>Sign In</Text>
+                {/* Confirm Password */}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Confirm Password *"
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showConfirmPassword}
+                    editable={!isLoading}
+                    placeholderTextColor="#999"
+                  />
+                  <TouchableOpacity 
+                    style={styles.eyeButton}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Ionicons 
+                      name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
+                      size={20} 
+                      color="#666" 
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Terms */}
+                <View style={styles.termsContainer}>
+                  <Checkbox
+                    style={styles.checkbox}
+                    value={termsAgreed}
+                    onValueChange={setTermsAgreed}
+                    color={termsAgreed ? '#2AB576' : undefined}
+                  />
+                  <Text style={styles.termsText}>
+                    I agree to the Terms & Conditions and Privacy Policy *
+                  </Text>
+                </View>
+
+                {/* Sign Up Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.signUpButton, 
+                    (!passwordValidation.isValid || !termsAgreed) && styles.signUpButtonDisabled
+                  ]}
+                  onPress={handleSignUp}
+                  disabled={isLoading || !passwordValidation.isValid || !termsAgreed}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.signUpButtonText}>Create Account</Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Login Option */}
+                <TouchableOpacity
+                  style={styles.loginOption}
+                  onPress={handleGoToLogin}
+                >
+                  <Text style={styles.loginOptionText}>Already have an account? Sign In</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-
-            {/* App Info */}
-            <View style={styles.appInfo}>
-              <Text style={styles.appInfoText}>By signing up, you agree to our terms</Text>
-              <Text style={styles.appVersion}>Detour Driver App v1.0.0</Text>
-            </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  container: {
+  scrollView: {
     flex: 1,
-  },
-  backButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 10 : 0,
-    left: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingBottom: 40,
   },
-  contentContainer: {
+  content: {
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 20,
+    minHeight: height,
+  },
+  // Message Container
+  messageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  messageSuccess: {
+    backgroundColor: '#F0F9F4',
+    borderColor: '#E8FFED',
+  },
+  messageError: {
+    backgroundColor: '#FFF5F5',
+    borderColor: '#FFE8E8',
+  },
+  messageText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 12,
+  },
+  // Verification Screen
+  verificationContainer: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
     marginTop: 40,
   },
+  centeredContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  verificationHeader: {
+    alignItems: 'center',
+    marginBottom: 30,
+    width: '100%',
+  },
+  verificationIcon: {
+    position: 'relative',
+    marginBottom: 20,
+  },
+  verificationBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#2AB576',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verificationTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  verificationSubtitle: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  verificationEmail: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2AB576',
+    textAlign: 'center',
+  },
+  // Resend Text Styles
+  resendTextContainer: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  resendText: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  resendLink: {
+    color: '#2AB576',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  resendSpinner: {
+    marginTop: 8,
+  },
+  // Resend Button (old - keep for reference)
+  resendButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2AB576',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  resendButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 10,
+    textAlign: 'center',
+  },
+  // Regular Form
   header: {
     marginBottom: 30,
-  },
-  titleContainer: {
-    marginTop: 20,
   },
   title: {
     fontSize: 32,
@@ -467,17 +617,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E9ECEF',
+    height: 56,
   },
   inputIcon: {
     marginRight: 12,
   },
   input: {
     flex: 1,
-    height: 56,
     fontSize: 16,
     color: '#333',
     paddingVertical: 0,
-    fontFamily: 'System',
   },
   eyeButton: {
     padding: 8,
@@ -491,17 +640,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E9ECEF',
   },
-  passwordRequirementsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-  },
   passwordRequirement: {
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 6,
-    fontFamily: 'System',
   },
   requirementMet: {
     color: '#2AB576',
@@ -509,21 +651,10 @@ const styles = StyleSheet.create({
   requirementNotMet: {
     color: '#FF6B6B',
   },
-  passwordMatchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  passwordMatchText: {
-    fontSize: 14,
-    marginLeft: 8,
-    fontWeight: '500',
-  },
   termsContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+    alignItems: 'center',
+    marginBottom: 24,
     paddingHorizontal: 4,
   },
   checkbox: {
@@ -531,27 +662,12 @@ const styles = StyleSheet.create({
     height: 20,
     marginRight: 12,
     borderRadius: 4,
-    marginTop: 2,
-  },
-  termsTextContainer: {
-    flex: 1,
   },
   termsText: {
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
-    fontFamily: 'System',
-  },
-  termsLink: {
-    color: '#2AB576',
-    fontWeight: '600',
-  },
-  requiredNote: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 24,
-    paddingHorizontal: 4,
-    fontStyle: 'italic',
+    flex: 1,
   },
   signUpButton: {
     backgroundColor: '#2AB576',
@@ -559,7 +675,7 @@ const styles = StyleSheet.create({
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   signUpButtonDisabled: {
     opacity: 0.5,
@@ -568,39 +684,14 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: 'System',
   },
-  loginContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  loginOption: {
+    paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 30,
   },
-  loginText: {
-    color: '#666',
-    fontSize: 14,
-    fontFamily: 'System',
-  },
-  loginLink: {
+  loginOptionText: {
     color: '#2AB576',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
-    fontFamily: 'System',
-  },
-  appInfo: {
-    alignItems: 'center',
-    marginTop: 'auto',
-    paddingBottom: 20,
-  },
-  appInfoText: {
-    color: '#999',
-    fontSize: 12,
-    marginBottom: 4,
-    fontFamily: 'System',
-  },
-  appVersion: {
-    color: '#CCC',
-    fontSize: 10,
-    fontFamily: 'System',
   },
 });

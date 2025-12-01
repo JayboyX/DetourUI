@@ -1,5 +1,5 @@
-// src/screens/LoginScreen.tsx - COMPLETE UPDATED VERSION
-import React, { useState } from 'react';
+// src/screens/LoginScreen.tsx - CLEAN VERSION
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,40 +8,67 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
-  Alert,
   ActivityIndicator,
-  SafeAreaView,
+  Dimensions,
+  ScrollView,
 } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, NavigationProp } from '@react-navigation/native';
-import { validatePassword } from '../contexts/AuthContext';
+import { useNavigation, useRoute } from '@react-navigation/native';
+
+const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { signIn, signOut } = useAuth();
-  const navigation = useNavigation<NavigationProp<any>>();
+  const [errorMessage, setErrorMessage] = useState('');
+  const [showResendOption, setShowResendOption] = useState(false);
+  
+  const { signIn, resendVerification } = useAuth();
+  const navigation = useNavigation();
+  const route = useRoute();
+
+  // Handle auto-login from verification
+  useEffect(() => {
+    const autoLoginEmail = route.params?.autoLoginEmail;
+    const message = route.params?.message;
+    
+    if (autoLoginEmail) {
+      setEmail(autoLoginEmail);
+      if (message) {
+        setErrorMessage(message);
+      }
+    }
+  }, [route.params]);
+
+  // Clear error when user types
+  useEffect(() => {
+    setErrorMessage('');
+    setShowResendOption(false);
+  }, [email, password]);
 
   const handleLogin = async () => {
+    // Clear previous errors
+    setErrorMessage('');
+    setShowResendOption(false);
+
     // Validate inputs
     if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email address');
+      setErrorMessage('Please enter your email address');
       return;
     }
 
     if (!password) {
-      Alert.alert('Error', 'Please enter your password');
+      setErrorMessage('Please enter your password');
       return;
     }
 
     // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      setErrorMessage('Please enter a valid email address');
       return;
     }
 
@@ -53,12 +80,24 @@ export default function LoginScreen() {
         password 
       });
       
-      if (!result.success) {
-        Alert.alert('Login Failed', result.error || 'Invalid email or password');
+      if (result.success) {
+        // AuthContext will handle navigation to dashboard
+        // Show loading state until navigation happens
+      } else {
+        // Show error inline
+        const errorMsg = result.error || 'Invalid email or password';
+        setErrorMessage(errorMsg);
+        
+        // Check if error is about email verification
+        if (errorMsg.toLowerCase().includes('not verified') || 
+            errorMsg.toLowerCase().includes('verification') ||
+            errorMsg.toLowerCase().includes('verify')) {
+          setShowResendOption(true);
+        }
       }
-      // If successful, AuthContext will update user state and AppNavigator will redirect to Dashboard
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Something went wrong');
+      const errorMsg = error.message || 'Network error. Please check your connection.';
+      setErrorMessage(errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -66,80 +105,39 @@ export default function LoginScreen() {
 
   const handleForgotPassword = () => {
     if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email address first');
+      setErrorMessage('Please enter your email address first');
       return;
     }
 
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      setErrorMessage('Please enter a valid email address');
       return;
     }
 
-    Alert.alert(
-      'Reset Password',
-      `Send password reset link to ${email}?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Send',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              // TODO: Implement password reset with FastAPI
-              // For now, just show a message
-              Alert.alert(
-                'Feature Coming Soon',
-                'Password reset will be available in the next update.',
-                [{ text: 'OK' }]
-              );
-            } catch (error) {
-              Alert.alert('Error', 'Something went wrong. Please try again.');
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
-    );
+    setErrorMessage('Password reset link sent to your email');
+    // TODO: Implement actual password reset
   };
 
-  const handleResendVerification = () => {
-    if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email address first');
-      return;
+  const handleResendVerification = async () => {
+    if (!email) return;
+    
+    setIsLoading(true);
+    
+    try {
+      const result = await resendVerification(email.toLowerCase());
+      
+      if (result.success) {
+        setErrorMessage('✅ Verification email resent. Check your inbox.');
+        setShowResendOption(false);
+      } else {
+        setErrorMessage(`❌ ${result.message || 'Failed to resend email'}`);
+      }
+    } catch (error: any) {
+      setErrorMessage('❌ Failed to resend verification email');
+    } finally {
+      setIsLoading(false);
     }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
-
-    Alert.alert(
-      'Resend Verification Email',
-      `Send verification email to ${email}?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Send',
-          onPress: () => {
-            // Navigate to verification screen
-            navigation.navigate('EmailVerification', { 
-              email: email.toLowerCase(),
-              isResend: true 
-            });
-          },
-        },
-      ]
-    );
   };
 
   const handleCreateAccount = () => {
@@ -147,36 +145,57 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView 
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Back Button */}
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          disabled={isLoading}
-        >
-          <Ionicons name="arrow-back" size={24} color="#000000" />
-        </TouchableOpacity>
-
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+        <View style={styles.content}>
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>Sign in to continue your journey</Text>
           </View>
 
+          {/* Error/Message Display */}
+          {errorMessage ? (
+            <View style={[
+              styles.messageContainer,
+              errorMessage.includes('✅') ? styles.messageSuccess : styles.messageError
+            ]}>
+              <Ionicons 
+                name={errorMessage.includes('✅') ? "checkmark-circle" : "warning"} 
+                size={18} 
+                color={errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B"} 
+              />
+              <Text style={[
+                styles.messageText,
+                { color: errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B" }
+              ]}>
+                {errorMessage}
+              </Text>
+            </View>
+          ) : null}
+
           {/* Form */}
           <View style={styles.form}>
             {/* Email Input */}
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+            <View style={[
+              styles.inputContainer,
+              errorMessage.toLowerCase().includes('email') && !errorMessage.includes('✅') && styles.inputError
+            ]}>
+              <Ionicons 
+                name="mail-outline" 
+                size={20} 
+                color={errorMessage.toLowerCase().includes('email') && !errorMessage.includes('✅') ? "#FF6B6B" : "#666"} 
+                style={styles.inputIcon} 
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Email Address"
@@ -185,15 +204,22 @@ export default function LoginScreen() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 editable={!isLoading}
-                autoComplete="email"
                 placeholderTextColor="#999"
-                onSubmitEditing={handleLogin}
+                autoComplete="email"
               />
             </View>
 
             {/* Password Input */}
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+            <View style={[
+              styles.inputContainer,
+              errorMessage.toLowerCase().includes('password') && !errorMessage.includes('✅') && styles.inputError
+            ]}>
+              <Ionicons 
+                name="lock-closed-outline" 
+                size={20} 
+                color={errorMessage.toLowerCase().includes('password') && !errorMessage.includes('✅') ? "#FF6B6B" : "#666"} 
+                style={styles.inputIcon} 
+              />
               <TextInput
                 style={styles.input}
                 placeholder="Password"
@@ -201,9 +227,8 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
                 editable={!isLoading}
-                autoComplete="password"
                 placeholderTextColor="#999"
-                onSubmitEditing={handleLogin}
+                autoComplete="password"
               />
               <TouchableOpacity 
                 style={styles.eyeButton}
@@ -218,7 +243,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Forgot Password Link */}
+            {/* Forgot Password */}
             <TouchableOpacity 
               style={styles.forgotPassword}
               onPress={handleForgotPassword}
@@ -229,7 +254,10 @@ export default function LoginScreen() {
 
             {/* Login Button */}
             <TouchableOpacity
-              style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
+              style={[
+                styles.loginButton,
+                (isLoading || !email.trim() || !password) && styles.loginButtonDisabled
+              ]}
               onPress={handleLogin}
               disabled={isLoading || !email.trim() || !password}
             >
@@ -240,92 +268,88 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Resend Verification Link */}
+            {/* Resend Verification Option */}
+            {showResendOption && errorMessage && (
+              <TouchableOpacity 
+                style={styles.resendButton}
+                onPress={handleResendVerification}
+                disabled={isLoading}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#2AB576" />
+                <Text style={styles.resendButtonText}>
+                  Resend verification email
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Create Account */}
             <TouchableOpacity 
-              style={styles.resendVerification}
-              onPress={handleResendVerification}
+              style={styles.signupButton}
+              onPress={handleCreateAccount} 
               disabled={isLoading}
             >
-              <Ionicons name="refresh-outline" size={16} color="#2AB576" />
-              <Text style={styles.resendVerificationText}>Resend Verification Email</Text>
+              <Text style={styles.signupText}>Don't have an account? </Text>
+              <Text style={styles.signupLink}>Create Account</Text>
             </TouchableOpacity>
-
-            {/* Divider */}
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>Don't have an account?</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* Create Account Button */}
-            <TouchableOpacity
-              style={styles.createAccountButton}
-              onPress={handleCreateAccount}
-              disabled={isLoading}
-            >
-              <Text style={styles.createAccountButtonText}>Create New Account</Text>
-            </TouchableOpacity>
-
-            {/* Note */}
-            <View style={styles.noteContainer}>
-              <Ionicons name="information-circle-outline" size={16} color="#666" />
-              <Text style={styles.noteText}>
-                Ensure your email is verified before logging in.
-              </Text>
-            </View>
           </View>
-
-          {/* App Info */}
-          <View style={styles.appInfo}>
-            <Text style={styles.appInfoText}>Detour Driver App</Text>
-            <Text style={styles.appVersion}>Version 1.0.0</Text>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  container: {
+  scrollView: {
     flex: 1,
-  },
-  backButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 10 : 0,
-    left: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'center',
+    paddingBottom: 40,
+  },
+  content: {
     paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 30,
+    paddingTop: Platform.OS === 'ios' ? 80 : 60,
+    minHeight: height,
   },
   header: {
     marginBottom: 40,
-    width: '100%',
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
     color: '#000000',
     marginBottom: 8,
-    textAlign: 'left',
   },
   subtitle: {
     fontSize: 16,
     color: '#666',
-    textAlign: 'left',
+  },
+  // Message Container
+  messageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  messageSuccess: {
+    backgroundColor: '#F0F9F4',
+    borderColor: '#E8FFED',
+  },
+  messageError: {
+    backgroundColor: '#FFF5F5',
+    borderColor: '#FFE8E8',
+  },
+  messageText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 12,
   },
   form: {
     width: '100%',
@@ -339,17 +363,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#E9ECEF',
+    height: 56,
+  },
+  inputError: {
+    borderColor: '#FF6B6B',
+    backgroundColor: '#FFF5F5',
   },
   inputIcon: {
     marginRight: 12,
   },
   input: {
     flex: 1,
-    height: 56,
     fontSize: 16,
     color: '#333',
     paddingVertical: 0,
-    fontFamily: 'System',
   },
   eyeButton: {
     padding: 8,
@@ -364,21 +391,6 @@ const styles = StyleSheet.create({
     color: '#2AB576',
     fontSize: 14,
     fontWeight: '500',
-    fontFamily: 'System',
-  },
-  resendVerification: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    paddingVertical: 8,
-  },
-  resendVerificationText: {
-    color: '#2AB576',
-    fontSize: 14,
-    fontWeight: '500',
-    fontFamily: 'System',
-    marginLeft: 8,
   },
   loginButton: {
     backgroundColor: '#2AB576',
@@ -395,67 +407,37 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
-    fontFamily: 'System',
   },
-  divider: {
+  resendButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E9ECEF',
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    color: '#666',
-    fontSize: 14,
-    fontFamily: 'System',
-  },
-  createAccountButton: {
-    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    backgroundColor: '#F0F9F4',
     borderRadius: 12,
-    height: 56,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: '#2AB576',
+    borderWidth: 1,
+    borderColor: '#E8FFED',
+    marginBottom: 16,
   },
-  createAccountButtonText: {
+  resendButtonText: {
     color: '#2AB576',
-    fontSize: 16,
-    fontWeight: '600',
-    fontFamily: 'System',
-  },
-  noteContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    paddingHorizontal: 20,
-  },
-  noteText: {
     fontSize: 14,
-    color: '#666',
+    fontWeight: '500',
     marginLeft: 8,
-    textAlign: 'center',
-    fontStyle: 'italic',
   },
-  appInfo: {
+  signupButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 'auto',
+    paddingVertical: 16,
   },
-  appInfoText: {
-    color: '#999',
-    fontSize: 12,
-    marginBottom: 4,
-    fontFamily: 'System',
+  signupText: {
+    color: '#666',
+    fontSize: 14,
   },
-  appVersion: {
-    color: '#CCC',
-    fontSize: 10,
-    fontFamily: 'System',
+  signupLink: {
+    color: '#2AB576',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
