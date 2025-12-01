@@ -1,5 +1,5 @@
-// src/screens/DashboardScreen.tsx - SIMPLE VERSION
-import React, { useEffect } from "react";
+// src/screens/DashboardScreen.tsx - SIMPLE WITH KYC BUTTON
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -11,13 +11,39 @@ import {
 import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
 import { useAuth } from "../contexts/AuthContext";
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../lib/supabase'; // Your Supabase client
 
 export default function DashboardScreen() {
   const { user, isLoading, signOut } = useAuth();
+  const navigation = useNavigation();
+  const [kycData, setKycData] = useState(null);
+  const [isLoadingKYC, setIsLoadingKYC] = useState(true);
 
   useEffect(() => {
-    // Any initialization logic here
-  }, []);
+    if (user) {
+      fetchKYCStatus();
+    }
+  }, [user]);
+
+  const fetchKYCStatus = async () => {
+    try {
+      setIsLoadingKYC(true);
+      const { data, error } = await supabase
+        .from('kyc_information')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle(); // Returns null if no record found
+
+      if (error) throw error;
+      setKycData(data);
+    } catch (error) {
+      console.error('Error fetching KYC status:', error);
+    } finally {
+      setIsLoadingKYC(false);
+    }
+  };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -41,7 +67,49 @@ export default function DashboardScreen() {
     );
   };
 
-  if (isLoading) {
+  const handleKYCAction = () => {
+    if (kycData) {
+      // If KYC exists but not verified, show status
+      if (kycData.kyc_status !== 'verified') {
+        Alert.alert(
+          "KYC Status",
+          `Your KYC is currently ${kycData.kyc_status}. Verification typically takes 24-48 hours.`,
+          [{ text: "OK" }]
+        );
+      }
+    } else {
+      // No KYC data, navigate to KYC screen
+      navigation.navigate('KYC');
+    }
+  };
+
+  const isKYCVerified = () => {
+    return kycData && kycData.kyc_status === 'verified';
+  };
+
+  const getKYCStatusText = () => {
+    if (!kycData) return "Not Submitted";
+    
+    switch (kycData.kyc_status) {
+      case 'verified': return 'Verified';
+      case 'pending': return 'Under Review';
+      case 'rejected': return 'Rejected';
+      default: return 'Unknown';
+    }
+  };
+
+  const getKYCStatusColor = () => {
+    if (!kycData) return "#666";
+    
+    switch (kycData.kyc_status) {
+      case 'verified': return "#2AB576";
+      case 'pending': return "#FFA500";
+      case 'rejected': return "#FF6B6B";
+      default: return "#666";
+    }
+  };
+
+  if (isLoading || isLoadingKYC) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#2AB576" />
@@ -74,7 +142,7 @@ export default function DashboardScreen() {
       <TopBar />
       
       <View style={styles.content}>
-        {/* Welcome Message - Simple */}
+        {/* Welcome Message */}
         <View style={styles.welcomeContainer}>
           <Text style={styles.welcomeTitle}>Welcome</Text>
           <Text style={styles.userName}>{user.full_name}</Text>
@@ -90,11 +158,46 @@ export default function DashboardScreen() {
           )}
         </View>
 
-        {/* Simple Log Out Button */}
+        {/* KYC Status Display */}
+        <View style={styles.kycStatusContainer}>
+          <Text style={styles.kycStatusLabel}>KYC Status:</Text>
+          <View style={[styles.kycStatusBadge, { backgroundColor: getKYCStatusColor() + '20' }]}>
+            <Text style={[styles.kycStatusText, { color: getKYCStatusColor() }]}>
+              {getKYCStatusText()}
+            </Text>
+          </View>
+        </View>
+
+        {/* KYC Button - Only show if not verified */}
+        {!isKYCVerified() && (
+          <TouchableOpacity 
+            style={styles.kycButton}
+            onPress={handleKYCAction}
+          >
+            <Ionicons name="shield-checkmark" size={24} color="#FFFFFF" />
+            <Text style={styles.kycButtonText}>
+              {kycData ? 'Check KYC Status' : 'Complete KYC Verification'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Verified KYC Message */}
+        {isKYCVerified() && (
+          <View style={styles.verifiedContainer}>
+            <Ionicons name="checkmark-circle" size={48} color="#2AB576" />
+            <Text style={styles.verifiedTitle}>KYC Verified</Text>
+            <Text style={styles.verifiedText}>
+              Your identity verification is complete. You're ready to start driving!
+            </Text>
+          </View>
+        )}
+
+        {/* Sign Out Button */}
         <TouchableOpacity 
           style={styles.signOutButton}
           onPress={handleSignOut}
         >
+          <Ionicons name="log-out-outline" size={20} color="#FF6B6B" />
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </View>
@@ -160,7 +263,7 @@ const styles = StyleSheet.create({
   },
   welcomeContainer: {
     alignItems: "center",
-    marginBottom: 40,
+    marginBottom: 30,
   },
   welcomeTitle: {
     fontSize: 32,
@@ -191,12 +294,82 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  kycStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    minWidth: 200,
+    justifyContent: "center",
+  },
+  kycStatusLabel: {
+    fontSize: 16,
+    color: "#666",
+    marginRight: 12,
+    fontWeight: "500",
+  },
+  kycStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  kycStatusText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  kycButton: {
+    backgroundColor: "#2AB576",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginBottom: 20,
+    width: "100%",
+    maxWidth: 300,
+  },
+  kycButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 12,
+  },
+  verifiedContainer: {
+    alignItems: "center",
+    backgroundColor: "#F0F9F4",
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 24,
+    width: "100%",
+    maxWidth: 300,
+    borderWidth: 1,
+    borderColor: "#E8FFED",
+  },
+  verifiedTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#2AB576",
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  verifiedText: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 20,
+  },
   signOutButton: {
     backgroundColor: "#FFE8E8",
-    paddingVertical: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
     paddingHorizontal: 40,
     borderRadius: 12,
-    alignItems: "center",
     width: "100%",
     maxWidth: 200,
   },
@@ -204,5 +377,6 @@ const styles = StyleSheet.create({
     color: "#FF6B6B",
     fontSize: 16,
     fontWeight: "600",
+    marginLeft: 8,
   },
 });

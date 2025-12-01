@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // Use your FastAPI server URL - Update this!
-const API_BASE_URL = 'https://3a5ea9256115.ngrok-free.app/api';
+const API_BASE_URL = 'https://sjkixfkta8.us-east-1.awsapprunner.com/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

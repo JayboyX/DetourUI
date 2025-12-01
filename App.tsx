@@ -8,6 +8,7 @@ import DashboardScreen from "./src/screens/DashboardScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import SignUpScreen from "./src/screens/SignUpScreen";
 import EmailVerificationScreen from "./src/screens/EmailVerificationScreen";
+import KYCScreen from "./src/screens/KYCScreen"; // Import the KYC screen
 import { ActivityIndicator, View, StatusBar } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -78,6 +79,15 @@ const AppStack = React.memo(() => {
         options={{ 
           animation: 'fade',
           gestureEnabled: false,
+        }}
+      />
+      {/* Add KYC Screen */}
+      <Stack.Screen 
+        name="KYC" 
+        component={KYCScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
         }}
       />
       {/* Add other authenticated screens here as needed */}
