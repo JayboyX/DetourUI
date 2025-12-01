@@ -1,14 +1,12 @@
 import React, { useEffect, useRef } from "react";
 import {
-  View,
   StyleSheet,
   SafeAreaView,
   Image,
   Animated,
   Dimensions,
-  StatusBar,
+  View,
 } from "react-native";
-
 import { useNavigation, NavigationProp } from "@react-navigation/native";
 
 const { width, height } = Dimensions.get("window");
@@ -17,11 +15,11 @@ export default function WelcomeScreen() {
   const navigation = useNavigation<NavigationProp<any>>();
 
   // Animation values
-  const fadeAnim = useRef(new Animated.Value(0)).current; // opacity
-  const scaleAnim = useRef(new Animated.Value(0.8)).current; // slight zoom
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
-    // Fade-in + scale-in
+    // Combined animation sequence
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -35,7 +33,7 @@ export default function WelcomeScreen() {
       }),
     ]).start();
 
-    // Stay for 3 seconds, then fade out + navigate
+    // Navigate after delay - NOW GOES TO LOGIN SCREEN
     const timer = setTimeout(() => {
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -48,50 +46,50 @@ export default function WelcomeScreen() {
           duration: 600,
           useNativeDriver: true,
         }),
-      ]).start(() => navigation.navigate("Dashboard"));
+      ]).start(() => navigation.navigate("Login" as never)); // Changed from "Dashboard" to "Login"
     }, 3000);
 
     return () => clearTimeout(timer);
   }, []);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+    <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-
-        {/* FADE-IN / FADE-OUT LOGO */}
         <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
-            alignItems: "center",
-          }}
+          style={[
+            styles.logoContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ scale: scaleAnim }],
+            },
+          ]}
         >
           <Image
-            source={require("../assets/detourlogo.png")}
+            source={require("../../assets/detourlogo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
         </Animated.View>
-
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
+  safeArea: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#FFFFFF",
   },
-
   container: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#FFFFFF",
   },
-
+  logoContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   logo: {
     width: 220,
     height: 220,
