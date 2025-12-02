@@ -1,5 +1,5 @@
-// src/screens/DashboardScreen.tsx - SIMPLE WITH KYC BUTTON
-import React, { useEffect, useState } from "react";
+// src/screens/DashboardScreen.tsx - UPDATED WITH AUTO REFRESH
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,9 +11,9 @@ import {
 import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
 import { useAuth } from "../contexts/AuthContext";
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase'; // Your Supabase client
+import { supabase } from '../lib/supabase';
 
 export default function DashboardScreen() {
   const { user, isLoading, signOut } = useAuth();
@@ -21,20 +21,20 @@ export default function DashboardScreen() {
   const [kycData, setKycData] = useState(null);
   const [isLoadingKYC, setIsLoadingKYC] = useState(true);
 
-  useEffect(() => {
-    if (user) {
-      fetchKYCStatus();
-    }
-  }, [user]);
-
+  // Fetch KYC status function
   const fetchKYCStatus = async () => {
     try {
+      if (!user) {
+        setIsLoadingKYC(false);
+        return;
+      }
+      
       setIsLoadingKYC(true);
       const { data, error } = await supabase
         .from('kyc_information')
         .select('*')
         .eq('user_id', user.id)
-        .maybeSingle(); // Returns null if no record found
+        .maybeSingle();
 
       if (error) throw error;
       setKycData(data);
@@ -44,6 +44,31 @@ export default function DashboardScreen() {
       setIsLoadingKYC(false);
     }
   };
+
+  // Fetch on initial load
+  useEffect(() => {
+    if (user) {
+      fetchKYCStatus();
+    }
+  }, [user]);
+
+  // Fetch when screen comes into focus (after returning from KYC)
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        fetchKYCStatus();
+      }
+      
+      // Optional: Add a small delay to ensure data is updated
+      const refreshTimer = setTimeout(() => {
+        if (user) {
+          fetchKYCStatus();
+        }
+      }, 500);
+      
+      return () => clearTimeout(refreshTimer);
+    }, [user])
+  );
 
   const handleSignOut = async () => {
     Alert.alert(
