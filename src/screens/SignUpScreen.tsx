@@ -1,4 +1,4 @@
-// src/screens/SignUpScreen.tsx - WITH CUSTOM TOPBAR (NO BACK BUTTON)
+// src/screens/SignUpScreen.tsx - WITH WORKING AUTO-LOGIN
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -37,6 +37,7 @@ export default function SignUpScreen() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isResending, setIsResending] = useState(false);
   const verificationCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isVerificationComplete, setIsVerificationComplete] = useState(false);
   
   // Password validation state
   const [passwordValidation, setPasswordValidation] = useState<{
@@ -76,7 +77,7 @@ export default function SignUpScreen() {
 
     const timer = setInterval(() => {
       checkVerificationStatus(emailToCheck);
-    }, 5000);
+    }, 5000); // Check every 5 seconds
 
     verificationCheckTimerRef.current = timer;
     checkVerificationStatus(emailToCheck);
@@ -84,27 +85,55 @@ export default function SignUpScreen() {
 
   const checkVerificationStatus = async (emailToCheck: string) => {
     try {
+      console.log('Checking verification status for:', emailToCheck);
       const result = await checkVerification(emailToCheck);
+      
       if (result.success && result.email_verified) {
-        await AsyncStorage.removeItem('pending_verification_email');
+        console.log('Email verified! Attempting auto-login...');
+        
+        // Stop checking
         if (verificationCheckTimerRef.current) {
           clearInterval(verificationCheckTimerRef.current);
+          verificationCheckTimerRef.current = null;
         }
+        
+        // Clear pending verification flag
+        await AsyncStorage.removeItem('pending_verification_email');
         
         // Auto-login with stored credentials
         const storedPassword = await AsyncStorage.getItem('temp_password');
+        console.log('Stored password exists:', !!storedPassword);
+        
         if (storedPassword) {
-          const loginResult = await signIn({
-            email: emailToCheck,
-            password: storedPassword
-          });
-          
-          if (loginResult.success) {
-            await AsyncStorage.removeItem('temp_password');
-          } else {
+          try {
+            const loginResult = await signIn({
+              email: emailToCheck,
+              password: storedPassword
+            });
+            
+            console.log('Auto-login result:', loginResult);
+            
+            if (loginResult.success) {
+              // Clear temporary password
+              await AsyncStorage.removeItem('temp_password');
+              setIsVerificationComplete(true);
+              // Navigation will be handled by AuthContext
+            } else {
+              setErrorMessage('✅ Email verified! Please login manually.');
+              await AsyncStorage.removeItem('temp_password');
+            }
+          } catch (loginError) {
+            console.error('Auto-login error:', loginError);
             setErrorMessage('✅ Email verified! Please login manually.');
+            await AsyncStorage.removeItem('temp_password');
           }
+        } else {
+          setErrorMessage('✅ Email verified! Please login manually.');
         }
+        
+        setIsVerificationComplete(true);
+      } else {
+        console.log('Email not yet verified:', result.message);
       }
     } catch (error) {
       console.error('Error checking verification status:', error);
@@ -183,20 +212,29 @@ export default function SignUpScreen() {
     
     if (result.success) {
       const userEmail = email.trim().toLowerCase();
+      
+      // Store email for verification check
       await AsyncStorage.setItem('pending_verification_email', userEmail);
+      // Store password for auto-login
       await AsyncStorage.setItem('temp_password', password);
       
       setPendingEmail(userEmail);
       setShowVerificationPending(true);
+      setIsVerificationComplete(false);
       
+      // Start checking for verification
       startVerificationCheckInterval(userEmail);
       
+      // Clear form
       setFullName('');
       setEmail('');
       setPassword('');
       setConfirmPassword('');
       setTermsAgreed(false);
       setPasswordValidation({ isValid: false, requirements: [] });
+      
+      // Show success message
+      setErrorMessage('✅ Account created! Check your email for verification.');
       
     } else {
       setErrorMessage(result.error || 'Failed to create account');
@@ -209,18 +247,19 @@ export default function SignUpScreen() {
     if (!pendingEmail || isResending) return;
     
     setIsResending(true);
+    setErrorMessage('');
     
     try {
       const result = await resendVerification(pendingEmail);
       
-      if (!result.success) {
-        setErrorMessage(result.message || 'Failed to resend email');
-      } else {
-        setErrorMessage('✅ Verification email resent!');
+      if (result.success) {
+        setErrorMessage('✅ Verification email resent! Check your inbox.');
         setTimeout(() => setErrorMessage(''), 3000);
+      } else {
+        setErrorMessage(`❌ ${result.message || 'Failed to resend email'}`);
       }
     } catch (error: any) {
-      setErrorMessage('Failed to resend verification email');
+      setErrorMessage('❌ Failed to resend verification email');
     } finally {
       setIsResending(false);
     }
@@ -228,6 +267,18 @@ export default function SignUpScreen() {
 
   const handleGoToLogin = () => {
     navigation.navigate('Login');
+  };
+
+  const handleManualLogin = () => {
+    // Clear stored data
+    AsyncStorage.removeItem('pending_verification_email');
+    AsyncStorage.removeItem('temp_password');
+    
+    // Navigate to login with pre-filled email
+    navigation.navigate('Login', {
+      autoLoginEmail: pendingEmail,
+      message: '✅ Email verified! Please login.'
+    });
   };
 
   return (
@@ -267,11 +318,41 @@ export default function SignUpScreen() {
                         <Ionicons name="checkmark" size={16} color="#FFFFFF" />
                       </View>
                     </View>
-                    <Text style={styles.verificationTitle}>Check Your Email</Text>
-                    <Text style={styles.verificationSubtitle}>
-                      We've sent a verification link to:
-                    </Text>
-                    <Text style={styles.verificationEmail}>{pendingEmail}</Text>
+                    
+                    {isVerificationComplete ? (
+                      <>
+                        <Text style={styles.verificationTitle}>Email Verified!</Text>
+                        <Text style={styles.verificationSubtitle}>
+                          Your email has been successfully verified.
+                        </Text>
+                        <Text style={styles.verificationEmail}>
+                          Redirecting to dashboard...
+                        </Text>
+                        
+                        {/* Loading indicator for auto-login */}
+                        <ActivityIndicator 
+                          size="large" 
+                          color="#2AB576" 
+                          style={{ marginTop: 20 }}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.verificationTitle}>Check Your Email</Text>
+                        <Text style={styles.verificationSubtitle}>
+                          We've sent a verification link to:
+                        </Text>
+                        <Text style={styles.verificationEmail}>{pendingEmail}</Text>
+                        
+                        {/* Auto-checking indicator */}
+                        <View style={styles.checkingContainer}>
+                          <ActivityIndicator size="small" color="#2AB576" />
+                          <Text style={styles.checkingText}>
+                            Automatically checking for verification...
+                          </Text>
+                        </View>
+                      </>
+                    )}
                   </View>
 
                   {/* Error/Success Message */}
@@ -294,16 +375,31 @@ export default function SignUpScreen() {
                     </View>
                   ) : null}
 
-                  {/* Resend Text */}
-                  <View style={styles.resendTextContainer}>
-                    <Text style={styles.resendText}>
-                      Didn't get the email?{' '}
-                      <Text style={styles.resendLink} onPress={handleResendVerification}>
-                        {isResending ? 'Sending...' : 'Click here to receive it again'}
+                  {/* Manual Login Button (if auto-login fails) */}
+                  {errorMessage && errorMessage.includes('manually') && (
+                    <TouchableOpacity
+                      style={styles.manualLoginButton}
+                      onPress={handleManualLogin}
+                    >
+                      <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.manualLoginButtonText}>
+                        Go to Login
                       </Text>
-                    </Text>
-                    {isResending && <ActivityIndicator color="#2AB576" size="small" style={styles.resendSpinner} />}
-                  </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Resend Text */}
+                  {!isVerificationComplete && (
+                    <View style={styles.resendTextContainer}>
+                      <Text style={styles.resendText}>
+                        Didn't get the email?{' '}
+                        <Text style={styles.resendLink} onPress={handleResendVerification}>
+                          {isResending ? 'Sending...' : 'Click here to receive it again'}
+                        </Text>
+                      </Text>
+                      {isResending && <ActivityIndicator color="#2AB576" size="small" style={styles.resendSpinner} />}
+                    </View>
+                  )}
                 </View>
               </View>
             ) : (
@@ -481,6 +577,8 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 20,
     paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E9ECEF',
   },
   topBarContent: {
     flexDirection: 'row',
@@ -494,7 +592,7 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: '700',
     color: '#000',
-    marginBottom: 4, // Space between title and subtitle
+    marginBottom: 4,
   },
   topBarSubtitle: {
     fontSize: 14,
@@ -590,6 +688,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2AB576',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  checkingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  checkingText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 8,
+  },
+  // Manual Login Button
+  manualLoginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2AB576',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  manualLoginButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   // Resend Text Styles
   resendTextContainer: {
