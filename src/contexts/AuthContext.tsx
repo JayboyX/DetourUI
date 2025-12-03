@@ -1,8 +1,9 @@
-// src/contexts/AuthContext.tsx - COMPLETE FIXED VERSION
+// src/contexts/AuthContext.tsx - WITH DATABASE VALIDATION
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authAPI } from '../services/api';
+import { supabase } from '../lib/supabase';
 
 // Types
 export type User = {
@@ -28,6 +29,14 @@ export type SignInData = {
   password: string;
 };
 
+export type KYCStatus = {
+  hasKYC: boolean;
+  isComplete: boolean;
+  kycData?: any;
+  message?: string;
+  requiresKYC: boolean;
+};
+
 export type AuthContextType = {
   user: User | null;
   isLoading: boolean;
@@ -43,6 +52,8 @@ export type AuthContextType = {
   signInWithFacebook: () => Promise<{ success: boolean; error?: string; data?: any }>;
   validateSession: () => Promise<boolean>;
   forceLogout: () => Promise<void>;
+  checkKYCStatus: () => Promise<KYCStatus>;
+  clearKYCState: () => void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -122,6 +133,89 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const checkKYCStatus = async (): Promise<KYCStatus> => {
+    try {
+      if (!user || !token) {
+        return { 
+          hasKYC: false, 
+          isComplete: false, 
+          requiresKYC: true,
+          message: 'User not logged in' 
+        };
+      }
+
+      const { data, error } = await supabase
+        .from('kyc_information')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('KYC check error:', error);
+        return { 
+          hasKYC: false, 
+          isComplete: false, 
+          requiresKYC: true,
+          message: 'Error checking KYC status' 
+        };
+      }
+
+      if (!data) {
+        return { 
+          hasKYC: false, 
+          isComplete: false, 
+          requiresKYC: true,
+          message: 'No KYC record found. Please complete KYC verification.' 
+        };
+      }
+
+      const kycData = data;
+      
+      const requiredFields = [
+        'id_number',
+        'first_name', 
+        'last_name',
+        'date_of_birth',
+        'phone_number',
+        'address',
+        'bank_account_number',
+        'bank_name',
+        'id_document_url',
+        'proof_of_address_url',
+        'selfie_url'
+      ];
+
+      const isComplete = requiredFields.every(field => 
+        kycData[field] !== null && kycData[field] !== undefined && kycData[field] !== ''
+      );
+
+      const isRejected = kycData.kyc_status === 'rejected' || kycData.bav_status === 'failed';
+
+      return { 
+        hasKYC: true, 
+        isComplete: isComplete && !isRejected,
+        requiresKYC: !isComplete || isRejected,
+        kycData,
+        message: isRejected ? 
+          'KYC verification failed. Please contact support.' : 
+          (!isComplete ? 'Please complete all KYC fields.' : 'KYC complete')
+      };
+    } catch (error) {
+      console.error('KYC check error:', error);
+      return { 
+        hasKYC: false, 
+        isComplete: false, 
+        requiresKYC: true,
+        message: 'Error checking KYC status' 
+      };
+    }
+  };
+
+  const clearKYCState = () => {
+    console.log('KYC state cleared - will re-check on next load');
+  };
+
+  // FIXED: Now checks if user exists in database
   const validateSession = async (): Promise<boolean> => {
     try {
       const storedToken = await AsyncStorage.getItem('access_token');
@@ -132,12 +226,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       const parsedUser = JSON.parse(storedUser);
+      
+      // CRITICAL FIX: Check if user exists in database
+      const { data: dbUser, error: dbError } = await supabase
+        .from('users')
+        .select('id, email, status, email_verified')
+        .eq('id', parsedUser.id)
+        .single();
+      
+      // If user doesn't exist in DB, clear storage
+      if (dbError || !dbUser) {
+        console.log('User not found in database, clearing auth');
+        await clearAuthStorage();
+        return false;
+      }
+      
+      // Check if user is active
+      if (dbUser.status !== 'active') {
+        console.log('User account is not active');
+        await clearAuthStorage();
+        return false;
+      }
+      
+      // Update user data with latest from database
+      const updatedUser = { ...parsedUser, ...dbUser };
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      
+      // Also check verification with API
       const response = await authAPI.checkVerification(parsedUser.email);
       
       if (response.data.success) {
         if (isMountedRef.current) {
           setToken(storedToken);
-          setUser(parsedUser);
+          setUser(updatedUser);
         }
         return true;
       } else {
@@ -164,7 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!isValid && isMountedRef.current) {
           Alert.alert(
             'Session Expired',
-            'Your session has expired. Please log in again.',
+            'Your account has been removed or deactivated.',
             [{ text: 'OK' }]
           );
         }
@@ -182,11 +303,92 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // CRITICAL: Remove setIsLoading from signUp
+  // FIXED: Now checks if user exists in database before storing
+  const signIn = async (data: SignInData) => {
+    try {
+      const response = await authAPI.login({
+        email: data.email.toLowerCase(),
+        password: data.password,
+      });
+
+      if (response.data.success) {
+        const { access_token, user: userData } = response.data.data;
+        
+        // VERIFY USER EXISTS IN DATABASE
+        const { data: dbUser, error: dbError } = await supabase
+          .from('users')
+          .select('id, status, email_verified')
+          .eq('id', userData.id)
+          .single();
+        
+        if (dbError || !dbUser) {
+          // User doesn't exist in database
+          await clearAuthStorage();
+          return { 
+            success: false, 
+            error: 'Account not found' 
+          };
+        }
+        
+        if (dbUser.status !== 'active') {
+          // User is inactive
+          await clearAuthStorage();
+          return { 
+            success: false, 
+            error: 'Account is deactivated' 
+          };
+        }
+        
+        // Update user data with database info
+        const updatedUser = { ...userData, ...dbUser };
+        
+        // Store token and user data
+        await AsyncStorage.setItem('access_token', access_token);
+        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+        
+        if (isMountedRef.current) {
+          setToken(access_token);
+          setUser(updatedUser);
+        }
+        
+        return { 
+          success: true, 
+          data: { token: access_token, user: updatedUser },
+          message: response.data.message
+        };
+      } else {
+        return { 
+          success: false, 
+          error: response.data.message || 'Login failed'
+        };
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      
+      if (error.message?.includes('Network Error') || error.code === 'ERR_NETWORK') {
+        return { 
+          success: false, 
+          error: 'Cannot connect to server. Check your internet connection.'
+        };
+      }
+      
+      let errorMessage = 'Login failed';
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      return { 
+        success: false, 
+        error: errorMessage 
+      };
+    }
+  };
+
   const signUp = async (data: SignUpData) => {
     try {
-      // NO setIsLoading here - let the screen handle its own loading state
-      
       const response = await authAPI.signup({
         full_name: data.full_name,
         email: data.email.toLowerCase(),
@@ -226,64 +428,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // CRITICAL: Remove setIsLoading from signIn
-  const signIn = async (data: SignInData) => {
-    try {
-      const response = await authAPI.login({
-        email: data.email.toLowerCase(),
-        password: data.password,
-      });
-
-      if (response.data.success) {
-        const { access_token, user: userData } = response.data.data;
-        
-        // Store token and user data
-        await AsyncStorage.setItem('access_token', access_token);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-        
-        if (isMountedRef.current) {
-          setToken(access_token);
-          setUser(userData);
-        }
-        
-        return { 
-          success: true, 
-          data: { token: access_token, user: userData },
-          message: response.data.message
-        };
-      } else {
-        return { 
-          success: false, 
-          error: response.data.message || 'Login failed'
-        };
-      }
-    } catch (error: any) {
-      console.error('Login error:', error);
-      
-      // Check if it's a network error
-      if (error.message?.includes('Network Error') || error.code === 'ERR_NETWORK') {
-        return { 
-          success: false, 
-          error: 'Cannot connect to server. Check your internet connection.'
-        };
-      }
-      
-      let errorMessage = 'Login failed';
-      
-      if (error.response?.data?.message) {
-        errorMessage = error.response.data.message;
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      return { 
-        success: false, 
-        error: errorMessage 
-      };
-    }
-  };
-
-  // CRITICAL: Remove setIsLoading from verifyEmail
   const verifyEmail = async (token: string) => {
     try {
       const response = await authAPI.verifyEmail(token);
@@ -315,7 +459,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // CRITICAL: Remove setIsLoading from resendVerification
   const resendVerification = async (email: string) => {
     try {
       const response = await authAPI.resendVerification(email);
@@ -346,7 +489,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // CRITICAL: Remove setIsLoading from checkVerification
   const checkVerification = async (email: string) => {
     try {
       const response = await authAPI.checkVerification(email);
@@ -402,12 +544,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      // TODO: Implement Google sign in with your FastAPI backend
-      // For now, return a mock success
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
+      await new Promise(resolve => setTimeout(resolve, 1000));
       return { 
-        success: false, // Change to true when implemented
+        success: false,
         error: 'Google sign in is coming soon!'
       };
     } catch (error: any) {
@@ -421,12 +560,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithFacebook = async () => {
     try {
-      // TODO: Implement Facebook sign in with your FastAPI backend
-      // For now, return a mock success
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      
+      await new Promise(resolve => setTimeout(resolve, 1000));
       return { 
-        success: false, // Change to true when implemented
+        success: false,
         error: 'Facebook sign in is coming soon!'
       };
     } catch (error: any) {
@@ -444,10 +580,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No user logged in');
       }
 
-      // TODO: Implement update profile endpoint in FastAPI
       console.log('Update profile data:', data);
       
-      // For now, just update local state
       const updatedUser = { ...user, ...data };
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
       if (isMountedRef.current) {
@@ -477,8 +611,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateProfile,
     signInWithGoogle,
     signInWithFacebook,
-    validateSession, // This is the function defined above
+    validateSession,
     forceLogout,
+    checkKYCStatus,
+    clearKYCState,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

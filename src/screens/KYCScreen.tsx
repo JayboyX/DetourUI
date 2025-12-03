@@ -588,14 +588,15 @@ export default function KYCScreen() {
             .eq('id', kycRecordId);
         }
         
-        setOtpSuccess(true);
-        
+      setOtpSuccess(true);
+
+      setTimeout(() => {
+        setShowOtpModal(false);
         setTimeout(() => {
-          setShowOtpModal(false);
-          setTimeout(() => {
-            navigation.goBack();
-          }, 2000);
+          // Navigate to Dashboard instead of going back
+          navigation.navigate('Dashboard');
         }, 2000);
+      }, 2000);
         
       } else {
         setOtpError(data.message || 'Invalid OTP code');

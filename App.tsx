@@ -9,6 +9,14 @@ import LoginScreen from "./src/screens/LoginScreen";
 import SignUpScreen from "./src/screens/SignUpScreen";
 import EmailVerificationScreen from "./src/screens/EmailVerificationScreen";
 import KYCScreen from "./src/screens/KYCScreen"; // Import the KYC screen
+import SubscriptionScreen from "./src/screens/SubscriptionScreen";
+import AdvanceScreen from "./src/screens/AdvanceScreen";
+import BuyScreen from "./src/screens/BuyScreen";
+import WithdrawalScreen from "./src/screens/WithdrawalScreen";
+import RewardsScreen from "./src/screens/RewardsScreen";
+import WalletScreen from "./src/screens/WalletScreen";
+import StatementsScreen from "./src/screens/StatementsScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
 import { ActivityIndicator, View, StatusBar } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -73,6 +81,7 @@ const AppStack = React.memo(() => {
       }}
       initialRouteName="Dashboard"
     >
+      {/* Dashboard Screen */}
       <Stack.Screen 
         name="Dashboard" 
         component={DashboardScreen}
@@ -81,10 +90,82 @@ const AppStack = React.memo(() => {
           gestureEnabled: false,
         }}
       />
-      {/* Add KYC Screen */}
+      {/* KYC Screen */}
       <Stack.Screen 
         name="KYC" 
         component={KYCScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Subscription Screen */}
+      <Stack.Screen 
+        name="Subscription" 
+        component={SubscriptionScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Advance Screen */}
+      <Stack.Screen 
+        name="Advance" 
+        component={AdvanceScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Buy Screen */}
+      <Stack.Screen 
+        name="Buy" 
+        component={BuyScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Withdrawal Screen */}
+      <Stack.Screen 
+        name="Withdrawal" 
+        component={WithdrawalScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Rewards Screen */}
+      <Stack.Screen 
+        name="Rewards" 
+        component={RewardsScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Wallet Screen */}
+      <Stack.Screen 
+        name="Wallet" 
+        component={WalletScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Statements Screen */}
+      <Stack.Screen 
+        name="Statements" 
+        component={StatementsScreen}
+        options={{ 
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+      {/* Profile Screen */}
+      <Stack.Screen 
+        name="Profile" 
+        component={ProfileScreen}
         options={{ 
           animation: 'slide_from_right',
           gestureEnabled: true,

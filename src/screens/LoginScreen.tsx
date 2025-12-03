@@ -1,4 +1,4 @@
-// src/screens/LoginScreen.tsx - CLEAN VERSION
+// src/screens/LoginScreen.tsx - WITH CUSTOM TOPBAR (NO BACK BUTTON)
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -30,7 +30,6 @@ export default function LoginScreen() {
   const navigation = useNavigation();
   const route = useRoute();
 
-  // Handle auto-login from verification
   useEffect(() => {
     const autoLoginEmail = route.params?.autoLoginEmail;
     const message = route.params?.message;
@@ -43,18 +42,15 @@ export default function LoginScreen() {
     }
   }, [route.params]);
 
-  // Clear error when user types
   useEffect(() => {
     setErrorMessage('');
     setShowResendOption(false);
   }, [email, password]);
 
   const handleLogin = async () => {
-    // Clear previous errors
     setErrorMessage('');
     setShowResendOption(false);
 
-    // Validate inputs
     if (!email.trim()) {
       setErrorMessage('Please enter your email address');
       return;
@@ -65,7 +61,6 @@ export default function LoginScreen() {
       return;
     }
 
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setErrorMessage('Please enter a valid email address');
@@ -81,14 +76,11 @@ export default function LoginScreen() {
       });
       
       if (result.success) {
-        // AuthContext will handle navigation to dashboard
-        // Show loading state until navigation happens
+        // Navigation handled by AuthContext
       } else {
-        // Show error inline
         const errorMsg = result.error || 'Invalid email or password';
         setErrorMessage(errorMsg);
         
-        // Check if error is about email verification
         if (errorMsg.toLowerCase().includes('not verified') || 
             errorMsg.toLowerCase().includes('verification') ||
             errorMsg.toLowerCase().includes('verify')) {
@@ -145,156 +137,164 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-    >
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.content}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to continue your journey</Text>
-          </View>
-
-          {/* Error/Message Display */}
-          {errorMessage ? (
-            <View style={[
-              styles.messageContainer,
-              errorMessage.includes('✅') ? styles.messageSuccess : styles.messageError
-            ]}>
-              <Ionicons 
-                name={errorMessage.includes('✅') ? "checkmark-circle" : "warning"} 
-                size={18} 
-                color={errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B"} 
-              />
-              <Text style={[
-                styles.messageText,
-                { color: errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B" }
-              ]}>
-                {errorMessage}
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Form */}
-          <View style={styles.form}>
-            {/* Email Input */}
-            <View style={[
-              styles.inputContainer,
-              errorMessage.toLowerCase().includes('email') && !errorMessage.includes('✅') && styles.inputError
-            ]}>
-              <Ionicons 
-                name="mail-outline" 
-                size={20} 
-                color={errorMessage.toLowerCase().includes('email') && !errorMessage.includes('✅') ? "#FF6B6B" : "#666"} 
-                style={styles.inputIcon} 
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Email Address"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                editable={!isLoading}
-                placeholderTextColor="#999"
-                autoComplete="email"
-              />
-            </View>
-
-            {/* Password Input */}
-            <View style={[
-              styles.inputContainer,
-              errorMessage.toLowerCase().includes('password') && !errorMessage.includes('✅') && styles.inputError
-            ]}>
-              <Ionicons 
-                name="lock-closed-outline" 
-                size={20} 
-                color={errorMessage.toLowerCase().includes('password') && !errorMessage.includes('✅') ? "#FF6B6B" : "#666"} 
-                style={styles.inputIcon} 
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                editable={!isLoading}
-                placeholderTextColor="#999"
-                autoComplete="password"
-              />
-              <TouchableOpacity 
-                style={styles.eyeButton}
-                onPress={() => setShowPassword(!showPassword)}
-                disabled={isLoading}
-              >
-                <Ionicons 
-                  name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                  size={20} 
-                  color="#666" 
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Forgot Password */}
-            <TouchableOpacity 
-              style={styles.forgotPassword}
-              onPress={handleForgotPassword}
-              disabled={isLoading}
-            >
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-            </TouchableOpacity>
-
-            {/* Login Button */}
-            <TouchableOpacity
-              style={[
-                styles.loginButton,
-                (isLoading || !email.trim() || !password) && styles.loginButtonDisabled
-              ]}
-              onPress={handleLogin}
-              disabled={isLoading || !email.trim() || !password}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.loginButtonText}>Sign In</Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Resend Verification Option */}
-            {showResendOption && errorMessage && (
-              <TouchableOpacity 
-                style={styles.resendButton}
-                onPress={handleResendVerification}
-                disabled={isLoading}
-              >
-                <Ionicons name="refresh-outline" size={16} color="#2AB576" />
-                <Text style={styles.resendButtonText}>
-                  Resend verification email
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Create Account */}
-            <TouchableOpacity 
-              style={styles.signupButton}
-              onPress={handleCreateAccount} 
-              disabled={isLoading}
-            >
-              <Text style={styles.signupText}>Don't have an account? </Text>
-              <Text style={styles.signupLink}>Create Account</Text>
-            </TouchableOpacity>
+    <View style={styles.container}>
+      {/* CUSTOM TOP BAR WITHOUT BACK BUTTON - TITLE ON TOP */}
+      <View style={styles.customTopBar}>
+        <View style={styles.topBarContent}>
+          <View style={styles.textContainer}>
+            {/* TITLE FIRST */}
+            <Text style={styles.topBarTitle}>Sign In</Text>
+            {/* SUBTITLE BELOW */}
+            <Text style={styles.topBarSubtitle}>Welcome to Detour Drive</Text>
           </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+      
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+      >
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.content}>
+            {/* Error/Message Display */}
+            {errorMessage ? (
+              <View style={[
+                styles.messageContainer,
+                errorMessage.includes('✅') ? styles.messageSuccess : styles.messageError
+              ]}>
+                <Ionicons 
+                  name={errorMessage.includes('✅') ? "checkmark-circle" : "warning"} 
+                  size={18} 
+                  color={errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B"} 
+                />
+                <Text style={[
+                  styles.messageText,
+                  { color: errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B" }
+                ]}>
+                  {errorMessage}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Form */}
+            <View style={styles.form}>
+              {/* Email Input */}
+              <View style={[
+                styles.inputContainer,
+                errorMessage.toLowerCase().includes('email') && !errorMessage.includes('✅') && styles.inputError
+              ]}>
+                <Ionicons 
+                  name="mail-outline" 
+                  size={20} 
+                  color={errorMessage.toLowerCase().includes('email') && !errorMessage.includes('✅') ? "#FF6B6B" : "#666"} 
+                  style={styles.inputIcon} 
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Email Address"
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  editable={!isLoading}
+                  placeholderTextColor="#999"
+                  autoComplete="email"
+                />
+              </View>
+
+              {/* Password Input */}
+              <View style={[
+                styles.inputContainer,
+                errorMessage.toLowerCase().includes('password') && !errorMessage.includes('✅') && styles.inputError
+              ]}>
+                <Ionicons 
+                  name="lock-closed-outline" 
+                  size={20} 
+                  color={errorMessage.toLowerCase().includes('password') && !errorMessage.includes('✅') ? "#FF6B6B" : "#666"} 
+                  style={styles.inputIcon} 
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  editable={!isLoading}
+                  placeholderTextColor="#999"
+                  autoComplete="password"
+                />
+                <TouchableOpacity 
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
+                >
+                  <Ionicons 
+                    name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                    size={20} 
+                    color="#666" 
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Forgot Password */}
+              <TouchableOpacity 
+                style={styles.forgotPassword}
+                onPress={handleForgotPassword}
+                disabled={isLoading}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              </TouchableOpacity>
+
+              {/* Login Button */}
+              <TouchableOpacity
+                style={[
+                  styles.loginButton,
+                  (isLoading || !email.trim() || !password) && styles.loginButtonDisabled
+                ]}
+                onPress={handleLogin}
+                disabled={isLoading || !email.trim() || !password}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.loginButtonText}>Sign In</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Resend Verification Option */}
+              {showResendOption && errorMessage && (
+                <TouchableOpacity 
+                  style={styles.resendButton}
+                  onPress={handleResendVerification}
+                  disabled={isLoading}
+                >
+                  <Ionicons name="refresh-outline" size={16} color="#2AB576" />
+                  <Text style={styles.resendButtonText}>
+                    Resend verification email
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Create Account */}
+              <TouchableOpacity 
+                style={styles.signupButton}
+                onPress={handleCreateAccount} 
+                disabled={isLoading}
+              >
+                <Text style={styles.signupText}>Don't have an account? </Text>
+                <Text style={styles.signupLink}>Create Account</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -302,6 +302,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  // Custom Top Bar Styles (White Background) - TITLE ON TOP
+  customTopBar: {
+    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    },
+  topBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  textContainer: {
+    flex: 1,
+  },
+  topBarTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 4, // Space between title and subtitle
+  },
+  topBarSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#555',
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -312,21 +341,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 80 : 60,
-    minHeight: height,
-  },
-  header: {
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
+    paddingTop: 20,
+    paddingBottom: 20,
+    minHeight: height * 0.7,
   },
   // Message Container
   messageContainer: {

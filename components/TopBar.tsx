@@ -1,7 +1,16 @@
 import React from "react";
-import { View, Text, StyleSheet, Platform, StatusBar, Image } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  Image,
+  TouchableOpacity,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAuth } from "../src/contexts/AuthContext"; // Updated path
+import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { useAuth } from "../src/contexts/AuthContext";
 
 interface TopBarProps {
   title?: string;
@@ -11,58 +20,104 @@ interface TopBarProps {
 
 export default function TopBar({
   title,
-  subtitle = "Welcome back,",
+  subtitle,
   showBackButton = false,
 }: TopBarProps) {
   const { user } = useAuth();
+  const navigation = useNavigation();
 
-  // Get first letter of first name for avatar fallback
   const getInitials = () => {
-    if (!user?.full_name) return "D"; // Default to "D" for Driver
-    
-    const names = user.full_name.trim().split(' ');
-    if (names.length === 1) {
-      return names[0].charAt(0).toUpperCase();
-    }
-    
-    // Get first letter of first name
-    return names[0].charAt(0).toUpperCase();
+    if (!user?.full_name) return "D";
+    return user.full_name.split(" ")[0].charAt(0).toUpperCase();
   };
 
-  // Get driver's first name for greeting
   const getFirstName = () => {
     if (!user?.full_name) return "Driver";
-    
-    const names = user.full_name.trim().split(' ');
-    return names[0];
+    return user.full_name.split(" ")[0];
   };
 
-  // Use provided title or get first name
+  // Dashboard uses name + subtitle by default
+  const isDashboard = !showBackButton;
+
   const displayTitle = title || getFirstName();
+  const displaySubtitle = subtitle || "Welcome back";
+
+  const handleBack = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+  };
 
   return (
-    <SafeAreaView edges={["top"]} style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.content}>
-          <View>
-            <Text style={styles.subtitle}>{subtitle}</Text>
-            <Text style={styles.title}>{displayTitle}</Text>
-          </View>
-          
-          {/* Profile Avatar */}
-          <View style={styles.avatarContainer}>
-            {user?.profile_photo_url ? (
-              <Image
-                source={{ uri: user.profile_photo_url }}
-                style={styles.avatarImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.avatarFallback}>
-                <Text style={styles.avatarText}>{getInitials()}</Text>
-              </View>
+    <SafeAreaView
+      edges={["top"]}
+      style={[
+        styles.safeArea,
+        { backgroundColor: isDashboard ? "#2AB576" : "#FFFFFF" },
+      ]}
+    >
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: isDashboard ? "#2AB576" : "#FFFFFF" },
+        ]}
+      >
+        {/* MAIN ROW */}
+        <View style={styles.row}>
+          {/* BACK BUTTON OR NOTHING (NO PLACEHOLDER ON DASHBOARD) */}
+          {showBackButton && (
+            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+              <Ionicons name="chevron-back" size={26} color="#000" />
+            </TouchableOpacity>
+          )}
+
+          {/* TEXT AREA */}
+          <View
+            style={[
+              styles.textContainer,
+              { marginLeft: showBackButton ? 10 : 0 },
+            ]}
+          >
+            {/* TITLE FIRST on NON-DASHBOARD SCREENS */}
+            {!isDashboard && (
+              <Text style={[styles.title, { color: "#000" }]}>
+                {displayTitle}
+              </Text>
+            )}
+
+            {/* SUBTITLE */}
+            <Text
+              style={[
+                styles.subtitle,
+                { color: isDashboard ? "rgba(255,255,255,0.9)" : "#555" },
+              ]}
+            >
+              {displaySubtitle}
+            </Text>
+
+            {/* DASHBOARD ONLY: TITLE BELOW SUBTITLE */}
+            {isDashboard && (
+              <Text style={[styles.title, { color: "#FFF" }]}>
+                {displayTitle}
+              </Text>
             )}
           </View>
+
+          {/* AVATAR ONLY ON DASHBOARD */}
+          {isDashboard ? (
+            <View style={styles.avatarContainer}>
+              {user?.profile_photo_url ? (
+                <Image
+                  source={{ uri: user.profile_photo_url }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarText}>{getInitials()}</Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -71,54 +126,67 @@ export default function TopBar({
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: "#2AB576",
+    width: "100%",
   },
+
   container: {
-    backgroundColor: "#2AB576",
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "ios" ? 10 : 15,
-    paddingBottom: 25,
+    paddingTop: Platform.OS === "ios" ? 8 : 14,
+    paddingBottom: 20,
   },
-  content: {
+
+  row: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
   },
-  subtitle: {
-    fontSize: 16,
-    color: "rgba(255, 255, 255, 0.9)",
-    fontWeight: "400",
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    marginTop: 2,
-  },
-  avatarContainer: {
-    alignItems: "center",
+
+  backButton: {
+    width: 30,
     justifyContent: "center",
   },
-  avatarImage: {
+
+  textContainer: {
+    flex: 1,
+  },
+
+  // SUBTITLE (always smaller)
+  subtitle: {
+    fontSize: 14,
+    fontWeight: "400",
+    marginBottom: 2,
+  },
+
+  // TITLE (always bigger)
+  title: {
+    fontSize: 26,
+    fontWeight: "700",
+  },
+
+  avatarContainer: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+    overflow: "hidden",
   },
+
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+
   avatarFallback: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
-    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.25)",
     justifyContent: "center",
+    alignItems: "center",
   },
+
   avatarText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: "#FFF",
   },
 });

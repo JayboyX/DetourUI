@@ -1,232 +1,366 @@
-// src/screens/DashboardScreen.tsx - UPDATED WITH AUTO REFRESH
-import React, { useEffect, useState, useCallback } from "react";
+// src/screens/DashboardScreen.tsx - WITH KYC CHECK & REAL-TIME WALLET
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
-  Alert,
+  ScrollView,
+  RefreshControl,
 } from "react-native";
 import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
-import { useAuth } from "../contexts/AuthContext";
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
+import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { useFocusEffect } from "@react-navigation/native";
+import { supabase } from "../lib/supabase";
 
-export default function DashboardScreen() {
-  const { user, isLoading, signOut } = useAuth();
-  const navigation = useNavigation();
-  const [kycData, setKycData] = useState(null);
-  const [isLoadingKYC, setIsLoadingKYC] = useState(true);
+interface Wallet {
+  id: string;
+  user_id: string;
+  balance: string;
+  currency: string;
+  wallet_number: string;
+  status: string;
+}
 
-  // Fetch KYC status function
-  const fetchKYCStatus = async () => {
+export default function DashboardScreen({ navigation }) {
+  const { user, checkKYCStatus } = useAuth();
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch wallet data
+  const fetchWallet = async () => {
     try {
-      if (!user) {
-        setIsLoadingKYC(false);
-        return;
-      }
-      
-      setIsLoadingKYC(true);
-      const { data, error } = await supabase
-        .from('kyc_information')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      if (!user?.id) return;
 
-      if (error) throw error;
-      setKycData(data);
+      const { data, error } = await supabase
+        .from("wallets")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .single();
+
+      if (error) {
+        console.error("Error fetching wallet:", error);
+        setWallet(null);
+      } else {
+        setWallet(data);
+      }
     } catch (error) {
-      console.error('Error fetching KYC status:', error);
+      console.error("Fetch wallet error:", error);
+      setWallet(null);
     } finally {
-      setIsLoadingKYC(false);
+      setIsLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Fetch on initial load
+  // Add real-time subscription
   useEffect(() => {
-    if (user) {
-      fetchKYCStatus();
-    }
-  }, [user]);
+    if (!user?.id) return;
 
-  // Fetch when screen comes into focus (after returning from KYC)
-  useFocusEffect(
-    useCallback(() => {
-      if (user) {
-        fetchKYCStatus();
-      }
-      
-      // Optional: Add a small delay to ensure data is updated
-      const refreshTimer = setTimeout(() => {
-        if (user) {
-          fetchKYCStatus();
-        }
-      }, 500);
-      
-      return () => clearTimeout(refreshTimer);
-    }, [user])
-  );
+    // Initial fetch
+    fetchWallet();
 
-  const handleSignOut = async () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Sign Out", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await signOut();
-            } catch (error) {
-              console.error('Sign out error:', error);
-              Alert.alert("Error", "Failed to sign out. Please try again.");
-            }
+    // Subscribe to wallet changes
+    const channel = supabase
+      .channel(`wallet_changes_${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "wallets",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.new && payload.new.status === "active") {
+            setWallet(payload.new as Wallet);
+          } else if (payload.eventType === "DELETE") {
+            setWallet(null);
           }
         }
-      ]
-    );
-  };
+      )
+      .subscribe();
 
-  const handleKYCAction = () => {
-    if (kycData) {
-      // If KYC exists but not verified, show status
-      if (kycData.kyc_status !== 'verified') {
-        Alert.alert(
-          "KYC Status",
-          `Your KYC is currently ${kycData.kyc_status}. Verification typically takes 24-48 hours.`,
-          [{ text: "OK" }]
-        );
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  // KYC check on entry
+  useFocusEffect(
+    React.useCallback(() => {
+      const checkKYCOnEntry = async () => {
+        try {
+          const kycResult = await checkKYCStatus();
+          
+          // If KYC is not complete, redirect to KYC screen
+          if (!kycResult.isComplete) {
+            console.log('KYC incomplete, redirecting...');
+            navigation.navigate("KYC");
+          }
+        } catch (error) {
+          console.error('Error checking KYC on dashboard entry:', error);
+        }
+      };
+
+      checkKYCOnEntry();
+    }, [navigation, checkKYCStatus])
+  );
+
+  // Initial KYC check
+  useEffect(() => {
+    const checkInitialKYC = async () => {
+      try {
+        const kycResult = await checkKYCStatus();
+        
+        if (!kycResult.isComplete) {
+          console.log('Initial KYC check incomplete');
+        }
+      } catch (error) {
+        console.error('Error in initial KYC check:', error);
       }
-    } else {
-      // No KYC data, navigate to KYC screen
-      navigation.navigate('KYC');
-    }
+    };
+
+    checkInitialKYC();
+  }, [checkKYCStatus]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchWallet();
   };
 
-  const isKYCVerified = () => {
-    return kycData && kycData.kyc_status === 'verified';
+  // Format balance display
+  const formatBalance = (balance: string) => {
+    const amount = parseFloat(balance || "0");
+    return `R ${amount.toFixed(2)}`;
   };
 
-  const getKYCStatusText = () => {
-    if (!kycData) return "Not Submitted";
-    
-    switch (kycData.kyc_status) {
-      case 'verified': return 'Verified';
-      case 'pending': return 'Under Review';
-      case 'rejected': return 'Rejected';
-      default: return 'Unknown';
-    }
+  // Calculate available advance (80% of balance)
+  const calculateAvailableAdvance = () => {
+    if (!wallet?.balance) return "0.00";
+    const balance = parseFloat(wallet.balance);
+    const available = balance * 0.8;
+    return available.toFixed(2);
   };
-
-  const getKYCStatusColor = () => {
-    if (!kycData) return "#666";
-    
-    switch (kycData.kyc_status) {
-      case 'verified': return "#2AB576";
-      case 'pending': return "#FFA500";
-      case 'rejected': return "#FF6B6B";
-      default: return "#666";
-    }
-  };
-
-  if (isLoading || isLoadingKYC) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2AB576" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (!user) {
-    return (
-      <View style={styles.container}>
-        <TopBar />
-        <View style={styles.authContainer}>
-          <Text style={styles.authTitle}>Welcome to Detour</Text>
-          <Text style={styles.authSubtitle}>Please sign in to access your dashboard</Text>
-          <TouchableOpacity 
-            style={styles.authButton}
-            onPress={() => navigation.navigate('Login')}
-          >
-            <Text style={styles.authButtonText}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
-        <BottomNav />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
       <TopBar />
-      
-      <View style={styles.content}>
-        {/* Welcome Message */}
-        <View style={styles.welcomeContainer}>
-          <Text style={styles.welcomeTitle}>Welcome</Text>
-          <Text style={styles.userName}>{user.full_name}</Text>
-          <Text style={styles.userEmail}>{user.email}</Text>
-          
-          {/* Email Verification Status */}
-          {!user.email_verified && (
-            <View style={styles.verifyContainer}>
-              <Text style={styles.verifyText}>
-                ⚠️ Please verify your email address
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={["#2AB576"]}
+            tintColor="#2AB576"
+          />
+        }
+      >
+        {/* WALLET CARD */}
+        <View style={styles.walletCard}>
+          {isLoading ? (
+            <>
+              <Text style={styles.balanceText}>Loading...</Text>
+              <View style={styles.divider} />
+              <View style={styles.walletRow}>
+                <View>
+                  <Text style={styles.walletLabel}>Available Advance</Text>
+                  <Text style={styles.walletValueGreen}>Loading...</Text>
+                </View>
+                <View>
+                  <Text style={styles.walletLabel}>Reward Points</Text>
+                  <Text style={styles.walletValue}>Loading...</Text>
+                </View>
+              </View>
+            </>
+          ) : wallet ? (
+            <>
+              <Text style={styles.balanceText}>
+                {formatBalance(wallet.balance)}
               </Text>
-            </View>
+
+              {/* Divider */}
+              <View style={styles.divider} />
+
+              <View style={styles.walletRow}>
+                <View>
+                  <Text style={styles.walletLabel}>Available Advance</Text>
+                  <Text style={styles.walletValueGreen}>
+                    R {calculateAvailableAdvance()}
+                  </Text>
+                </View>
+
+                <View>
+                  <Text style={styles.walletLabel}>Reward Points</Text>
+                  <Text style={styles.walletValue}>0</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.balanceText}>R 0.00</Text>
+              
+              {/* Divider */}
+              <View style={styles.divider} />
+
+              <View style={styles.walletRow}>
+                <View>
+                  <Text style={styles.walletLabel}>Available Advance</Text>
+                  <Text style={styles.walletValueGreen}>R 0.00</Text>
+                </View>
+
+                <View>
+                  <Text style={styles.walletLabel}>Reward Points</Text>
+                  <Text style={styles.walletValue}>0</Text>
+                </View>
+              </View>
+            </>
           )}
         </View>
 
-        {/* KYC Status Display */}
-        <View style={styles.kycStatusContainer}>
-          <Text style={styles.kycStatusLabel}>KYC Status:</Text>
-          <View style={[styles.kycStatusBadge, { backgroundColor: getKYCStatusColor() + '20' }]}>
-            <Text style={[styles.kycStatusText, { color: getKYCStatusColor() }]}>
-              {getKYCStatusText()}
+        {/* QUICK ACTIONS */}
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+
+        <View style={styles.quickActionsContainer}>
+          <TouchableOpacity
+            style={styles.greenButton}
+            onPress={() => navigation.navigate("Advance")}
+          >
+            <Ionicons name="trending-up" size={22} color="#fff" />
+            <Text style={styles.greenButtonText}>Get Advance</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.whiteButton}
+            onPress={() => navigation.navigate("Wallet")}
+          >
+            <Ionicons name="wallet-outline" size={22} color="#000" />
+            <Text style={styles.whiteButtonText}>View Wallet</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* BENEFITS */}
+        <Text style={styles.sectionTitle}>Your Benefits</Text>
+
+        {/* Benefit: Health & Safety */}
+        <TouchableOpacity style={styles.benefitCard}>
+          <Ionicons name="shield-checkmark-outline" size={26} color="#2AB576" />
+          <View style={styles.benefitInfo}>
+            <Text style={styles.benefitTitle}>Health & Safety</Text>
+            <Text style={styles.benefitSubtitle}>
+              24/7 emergency & hospital cover
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
+        {/* Benefit: Rewards */}
+        <TouchableOpacity 
+          style={styles.benefitCard}
+          onPress={() => navigation.navigate("Rewards")}
+        >
+          <Ionicons name="gift-outline" size={26} color="#D6A300" />
+          <View style={styles.benefitInfo}>
+            <Text style={styles.benefitTitle}>Rewards</Text>
+            <Text style={styles.benefitSubtitle}>
+              Earn on fuel, redeem for essentials
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
+        {/* Benefit: Detour Energy */}
+        <TouchableOpacity style={styles.benefitCard}>
+          <Ionicons name="flame-outline" size={26} color="#4CAF50" />
+          <View style={styles.benefitInfo}>
+            <Text style={styles.benefitTitle}>Detour Energy</Text>
+            <Text style={styles.benefitSubtitle}>
+              Refuel at major brands nationwide
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
+        {/* Benefit: Buy (Airtime, Data, Bundles) */}
+        <TouchableOpacity 
+          style={styles.benefitCard}
+          onPress={() => navigation.navigate("Buy")}
+        >
+          <Ionicons name="cart-outline" size={26} color="#2AB576" />
+          <View style={styles.benefitInfo}>
+            <Text style={styles.benefitTitle}>Buy</Text>
+            <Text style={styles.benefitSubtitle}>
+              Airtime, data, and essential bundles
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
+        {/* Benefit: Statements */}
+        <TouchableOpacity
+          style={styles.benefitCard}
+          onPress={() => navigation.navigate("Statements")}
+        >
+          <Ionicons name="document-text-outline" size={26} color="#2AB576" />
+          <View style={styles.benefitInfo}>
+            <Text style={styles.benefitTitle}>Statements</Text>
+            <Text style={styles.benefitSubtitle}>
+              View transaction & wallet history
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
+        {/* Benefit: Withdrawal */}
+        <TouchableOpacity 
+          style={styles.benefitCard}
+          onPress={() => navigation.navigate("Withdrawal")}
+        >
+          <Ionicons name="cash-outline" size={26} color="#008CFF" />
+          <View style={styles.benefitInfo}>
+            <Text style={styles.benefitTitle}>Withdrawal</Text>
+            <Text style={styles.benefitSubtitle}>
+              Cashout to your bank account
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
+        {/* Benefit: Subscription Management */}
+        <TouchableOpacity
+          style={styles.benefitCard}
+          onPress={() => navigation.navigate("Subscription")}
+        >
+          <Ionicons name="repeat-outline" size={26} color="#0A4AAA" />
+          <View style={styles.benefitInfo}>
+            <Text style={styles.benefitTitle}>Subscription</Text>
+            <Text style={styles.benefitSubtitle}>
+              Update your current subscription
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#999" />
+        </TouchableOpacity>
+
+        {/* PROMO BANNER (MATCHED TO UI) */}
+        <View style={styles.bannerWrapper}>
+          <View style={styles.bannerLeftAccent} />
+          <View style={styles.bannerCard}>
+            <Text style={styles.bannerTitle}>From driver to business owner</Text>
+            <Text style={styles.bannerSubtitle}>
+              Access financial planning, mentorship and bookkeeping.
             </Text>
           </View>
         </View>
+      </ScrollView>
 
-        {/* KYC Button - Only show if not verified */}
-        {!isKYCVerified() && (
-          <TouchableOpacity 
-            style={styles.kycButton}
-            onPress={handleKYCAction}
-          >
-            <Ionicons name="shield-checkmark" size={24} color="#FFFFFF" />
-            <Text style={styles.kycButtonText}>
-              {kycData ? 'Check KYC Status' : 'Complete KYC Verification'}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Verified KYC Message */}
-        {isKYCVerified() && (
-          <View style={styles.verifiedContainer}>
-            <Ionicons name="checkmark-circle" size={48} color="#2AB576" />
-            <Text style={styles.verifiedTitle}>KYC Verified</Text>
-            <Text style={styles.verifiedText}>
-              Your identity verification is complete. You're ready to start driving!
-            </Text>
-          </View>
-        )}
-
-        {/* Sign Out Button */}
-        <TouchableOpacity 
-          style={styles.signOutButton}
-          onPress={handleSignOut}
-        >
-          <Ionicons name="log-out-outline" size={20} color="#FF6B6B" />
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
-      </View>
-      
       <BottomNav />
     </View>
   );
@@ -237,171 +371,143 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8F9FA",
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#666",
-  },
-  authContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 40,
-  },
-  authTitle: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#333",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  authSubtitle: {
-    fontSize: 16,
-    color: "#666",
-    marginBottom: 30,
-    textAlign: "center",
-  },
-  authButton: {
-    backgroundColor: "#2AB576",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-    width: "100%",
-    alignItems: "center",
-  },
-  authButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  welcomeContainer: {
-    alignItems: "center",
-    marginBottom: 30,
-  },
-  welcomeTitle: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#000000",
-    marginBottom: 10,
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 5,
-  },
-  userEmail: {
-    fontSize: 16,
-    color: "#666",
-    marginBottom: 20,
-  },
-  verifyContainer: {
-    backgroundColor: "#FFF5E8",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  verifyText: {
-    color: "#FFA500",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  kycStatusContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    minWidth: 200,
-    justifyContent: "center",
-  },
-  kycStatusLabel: {
-    fontSize: 16,
-    color: "#666",
-    marginRight: 12,
-    fontWeight: "500",
-  },
-  kycStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  kycStatusText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  kycButton: {
-    backgroundColor: "#2AB576",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    marginBottom: 20,
-    width: "100%",
-    maxWidth: 300,
-  },
-  kycButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 12,
-  },
-  verifiedContainer: {
-    alignItems: "center",
-    backgroundColor: "#F0F9F4",
+
+  // --- WALLET CARD ---
+  walletCard: {
+    backgroundColor: "#fff",
+    marginTop: 20,
+    marginHorizontal: 16,
     borderRadius: 16,
-    padding: 24,
-    marginBottom: 24,
-    width: "100%",
-    maxWidth: 300,
-    borderWidth: 1,
-    borderColor: "#E8FFED",
+    padding: 20,
+    elevation: 2,
   },
-  verifiedTitle: {
-    fontSize: 20,
+  balanceText: {
+    fontSize: 34,
+    fontWeight: "800",
+    color: "#000",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#E5E7EB",
+    marginVertical: 14,
+  },
+  walletRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  walletLabel: {
+    fontSize: 14,
+    color: "#666",
+  },
+  walletValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  walletValueGreen: {
+    fontSize: 16,
     fontWeight: "700",
     color: "#2AB576",
+    marginTop: 4,
+  },
+
+  // --- SECTION TITLE ---
+  sectionTitle: {
+    marginTop: 25,
+    marginLeft: 18,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#000",
+  },
+
+  // --- QUICK ACTIONS ---
+  quickActionsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginHorizontal: 16,
+    marginTop: 16,
+  },
+  greenButton: {
+    backgroundColor: "#2AB576",
+    flex: 1,
+    marginRight: 8,
+    paddingVertical: 18,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  greenButtonText: {
+    color: "#fff",
+    marginTop: 6,
+    fontWeight: "700",
+  },
+  whiteButton: {
+    backgroundColor: "#fff",
+    flex: 1,
+    marginLeft: 8,
+    paddingVertical: 18,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#DDE0E5",
+  },
+  whiteButtonText: {
+    color: "#000",
+    marginTop: 6,
+    fontWeight: "700",
+  },
+
+
+  // --- BENEFITS ---
+  benefitCard: {
+    backgroundColor: "#fff",
+    marginHorizontal: 16,
     marginTop: 12,
-    marginBottom: 8,
-  },
-  verifiedText: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  signOutButton: {
-    backgroundColor: "#FFE8E8",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 40,
-    borderRadius: 12,
-    width: "100%",
-    maxWidth: 200,
+    borderRadius: 14,
+    padding: 16,
   },
-  signOutText: {
-    color: "#FF6B6B",
+  benefitInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  benefitTitle: {
     fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
+    fontWeight: "700",
+  },
+  benefitSubtitle: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 2,
+  },
+
+  // --- PROMO BANNER (MATCHED TO UI) ---
+  bannerWrapper: {
+    flexDirection: "row",
+    marginHorizontal: 16,
+    marginTop: 20,
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1.4,
+    borderColor: "#B4D4FF",
+  },
+  bannerLeftAccent: {
+    width: 10,
+    backgroundColor: "#0A4AAA",
+  },
+  bannerCard: {
+    flex: 1,
+    backgroundColor: "#E9F3FF",
+    padding: 16,
+  },
+  bannerTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0A4AAA",
+  },
+  bannerSubtitle: {
+    fontSize: 13,
+    color: "#444",
+    marginTop: 4,
   },
 });

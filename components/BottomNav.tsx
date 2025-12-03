@@ -7,51 +7,43 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, NavigationProp } from "@react-navigation/native";
-
-type NavItem = {
-  name: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  screen?: string;
-  isActive?: boolean;
-};
+import { useNavigation, useRoute } from "@react-navigation/native";
 
 export default function BottomNav() {
-  const navigation = useNavigation<NavigationProp<any>>();
+  const navigation = useNavigation();
+  const route = useRoute();
 
-  const navItems: NavItem[] = [
-    { name: "Home", icon: "home-outline", screen: "Dashboard", isActive: true },
-    { name: "Advance", icon: "speedometer-outline" },
-    { name: "Wallet", icon: "wallet-outline" },
-    { name: "Rewards", icon: "gift-outline" },
-    { name: "Profile", icon: "person-outline" },
+  const navItems = [
+    { name: "Home", icon: "home-outline", screen: "Dashboard" },
+    { name: "Advance", icon: "speedometer-outline", screen: "Advance" },
+    { name: "Wallet", icon: "wallet-outline", screen: "Wallet" },
+    { name: "Rewards", icon: "gift-outline", screen: "Rewards" },
+    { name: "Profile", icon: "person-outline", screen: "Profile" },
   ];
-
-  const handlePress = (item: NavItem) => {
-    if (item.screen) {
-      navigation.navigate(item.screen);
-    }
-  };
 
   return (
     <View style={styles.container}>
-      {navItems.map((item, index) => (
-        <TouchableOpacity
-          key={index}
-          style={styles.navItem}
-          onPress={() => handlePress(item)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name={item.icon}
-            size={22}
-            color={item.isActive ? "#2AB576" : "#666"}
-          />
-          <Text style={[styles.label, item.isActive && styles.activeLabel]}>
-            {item.name}
-          </Text>
-        </TouchableOpacity>
-      ))}
+      {navItems.map((item, index) => {
+        const isActive = route.name === item.screen;
+
+        return (
+          <TouchableOpacity
+            key={index}
+            style={styles.navItem}
+            onPress={() => navigation.navigate(item.screen)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={item.icon}
+              size={22}
+              color={isActive ? "#2AB576" : "#666"}
+            />
+            <Text style={[styles.label, isActive && styles.activeLabel]}>
+              {item.name}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -85,6 +77,6 @@ const styles = StyleSheet.create({
   },
   activeLabel: {
     color: "#2AB576",
-    fontWeight: "600",
+    fontWeight: "700",
   },
 });

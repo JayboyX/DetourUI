@@ -1,4 +1,4 @@
-// src/screens/SignUpScreen.tsx - FIXED VERSION (No RefreshControl)
+// src/screens/SignUpScreen.tsx - WITH CUSTOM TOPBAR (NO BACK BUTTON)
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -46,7 +46,6 @@ export default function SignUpScreen() {
   
   const { signUp, checkVerification, resendVerification, signIn } = useAuth();
 
-  // Check for pending verification when screen loads
   useEffect(() => {
     checkPendingVerification();
     
@@ -101,7 +100,6 @@ export default function SignUpScreen() {
           });
           
           if (loginResult.success) {
-            // AuthContext will handle navigation to dashboard
             await AsyncStorage.removeItem('temp_password');
           } else {
             setErrorMessage('✅ Email verified! Please login manually.');
@@ -233,37 +231,85 @@ export default function SignUpScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-    >
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.container}>
+      {/* CUSTOM TOP BAR WITHOUT BACK BUTTON - TITLE ON TOP */}
+      <View style={styles.customTopBar}>
+        <View style={styles.topBarContent}>
+          <View style={styles.textContainer}>
+            {/* TITLE FIRST */}
+            <Text style={styles.topBarTitle}>Sign Up</Text>
+            {/* SUBTITLE BELOW */}
+            <Text style={styles.topBarSubtitle}>Join Detour Drive</Text>
+          </View>
+        </View>
+      </View>
+      
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
       >
-        <View style={styles.content}>
-          {/* Verification Screen */}
-          {showVerificationPending ? (
-            <View style={styles.verificationContainer}>
-              <View style={styles.centeredContent}>
-                <View style={styles.verificationHeader}>
-                  <View style={styles.verificationIcon}>
-                    <Ionicons name="mail-outline" size={60} color="#2AB576" />
-                    <View style={styles.verificationBadge}>
-                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.content}>
+            {/* Verification Screen */}
+            {showVerificationPending ? (
+              <View style={styles.verificationContainer}>
+                <View style={styles.centeredContent}>
+                  <View style={styles.verificationHeader}>
+                    <View style={styles.verificationIcon}>
+                      <Ionicons name="mail-outline" size={60} color="#2AB576" />
+                      <View style={styles.verificationBadge}>
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      </View>
                     </View>
+                    <Text style={styles.verificationTitle}>Check Your Email</Text>
+                    <Text style={styles.verificationSubtitle}>
+                      We've sent a verification link to:
+                    </Text>
+                    <Text style={styles.verificationEmail}>{pendingEmail}</Text>
                   </View>
-                  <Text style={styles.verificationTitle}>Check Your Email</Text>
-                  <Text style={styles.verificationSubtitle}>
-                    We've sent a verification link to:
-                  </Text>
-                  <Text style={styles.verificationEmail}>{pendingEmail}</Text>
-                </View>
 
-                {/* Error/Success Message */}
+                  {/* Error/Success Message */}
+                  {errorMessage ? (
+                    <View style={[
+                      styles.messageContainer,
+                      errorMessage.includes('✅') ? styles.messageSuccess : styles.messageError
+                    ]}>
+                      <Ionicons 
+                        name={errorMessage.includes('✅') ? "checkmark-circle" : "warning"} 
+                        size={18} 
+                        color={errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B"} 
+                      />
+                      <Text style={[
+                        styles.messageText,
+                        { color: errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B" }
+                      ]}>
+                        {errorMessage}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Resend Text */}
+                  <View style={styles.resendTextContainer}>
+                    <Text style={styles.resendText}>
+                      Didn't get the email?{' '}
+                      <Text style={styles.resendLink} onPress={handleResendVerification}>
+                        {isResending ? 'Sending...' : 'Click here to receive it again'}
+                      </Text>
+                    </Text>
+                    {isResending && <ActivityIndicator color="#2AB576" size="small" style={styles.resendSpinner} />}
+                  </View>
+                </View>
+              </View>
+            ) : (
+              /* Regular Sign Up Form */
+              <>
+                {/* Error Message */}
                 {errorMessage ? (
                   <View style={[
                     styles.messageContainer,
@@ -283,183 +329,144 @@ export default function SignUpScreen() {
                   </View>
                 ) : null}
 
-                {/* Resend Text (not a button) */}
-                <View style={styles.resendTextContainer}>
-                  <Text style={styles.resendText}>
-                    Didn't get the email?{' '}
-                    <Text style={styles.resendLink} onPress={handleResendVerification}>
-                      {isResending ? 'Sending...' : 'Click here to receive it again'}
-                    </Text>
-                  </Text>
-                  {isResending && <ActivityIndicator color="#2AB576" size="small" style={styles.resendSpinner} />}
-                </View>
-              </View>
-            </View>
-          ) : (
-            /* Regular Sign Up Form */
-            <>
-              <View style={styles.header}>
-                <Text style={styles.title}>Create Account</Text>
-                <Text style={styles.subtitle}>Join Detour as a driver</Text>
-              </View>
-
-              {/* Error Message */}
-              {errorMessage ? (
-                <View style={[
-                  styles.messageContainer,
-                  errorMessage.includes('✅') ? styles.messageSuccess : styles.messageError
-                ]}>
-                  <Ionicons 
-                    name={errorMessage.includes('✅') ? "checkmark-circle" : "warning"} 
-                    size={18} 
-                    color={errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B"} 
-                  />
-                  <Text style={[
-                    styles.messageText,
-                    { color: errorMessage.includes('✅') ? "#2AB576" : "#FF6B6B" }
-                  ]}>
-                    {errorMessage}
-                  </Text>
-                </View>
-              ) : null}
-
-              <View style={styles.form}>
-                {/* Full Name */}
-                <View style={styles.inputContainer}>
-                  <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Full Name *"
-                    value={fullName}
-                    onChangeText={setFullName}
-                    editable={!isLoading}
-                    autoCapitalize="words"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-
-                {/* Email */}
-                <View style={styles.inputContainer}>
-                  <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Email Address *"
-                    value={email}
-                    onChangeText={setEmail}
-                    editable={!isLoading}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-
-                {/* Password */}
-                <View style={styles.inputContainer}>
-                  <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Password *"
-                    value={password}
-                    onChangeText={handlePasswordChange}
-                    secureTextEntry={!showPassword}
-                    editable={!isLoading}
-                    placeholderTextColor="#999"
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeButton}
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <Ionicons 
-                      name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                      size={20} 
-                      color="#666" 
+                <View style={styles.form}>
+                  {/* Full Name */}
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Full Name *"
+                      value={fullName}
+                      onChangeText={setFullName}
+                      editable={!isLoading}
+                      autoCapitalize="words"
+                      placeholderTextColor="#999"
                     />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Password Requirements */}
-                {password.length > 0 && (
-                  <View style={styles.passwordRequirements}>
-                    {passwordValidation.requirements.map((req, index) => (
-                      <Text 
-                        key={index} 
-                        style={[
-                          styles.passwordRequirement,
-                          req.startsWith('✅') ? styles.requirementMet : styles.requirementNotMet
-                        ]}
-                      >
-                        {req}
-                      </Text>
-                    ))}
                   </View>
-                )}
 
-                {/* Confirm Password */}
-                <View style={styles.inputContainer}>
-                  <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Confirm Password *"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry={!showConfirmPassword}
-                    editable={!isLoading}
-                    placeholderTextColor="#999"
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeButton}
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    <Ionicons 
-                      name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
-                      size={20} 
-                      color="#666" 
+                  {/* Email */}
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Email Address *"
+                      value={email}
+                      onChangeText={setEmail}
+                      editable={!isLoading}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      placeholderTextColor="#999"
                     />
+                  </View>
+
+                  {/* Password */}
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Password *"
+                      value={password}
+                      onChangeText={handlePasswordChange}
+                      secureTextEntry={!showPassword}
+                      editable={!isLoading}
+                      placeholderTextColor="#999"
+                    />
+                    <TouchableOpacity 
+                      style={styles.eyeButton}
+                      onPress={() => setShowPassword(!showPassword)}
+                    >
+                      <Ionicons 
+                        name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                        size={20} 
+                        color="#666" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Password Requirements */}
+                  {password.length > 0 && (
+                    <View style={styles.passwordRequirements}>
+                      {passwordValidation.requirements.map((req, index) => (
+                        <Text 
+                          key={index} 
+                          style={[
+                            styles.passwordRequirement,
+                            req.startsWith('✅') ? styles.requirementMet : styles.requirementNotMet
+                          ]}
+                        >
+                          {req}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Confirm Password */}
+                  <View style={styles.inputContainer}>
+                    <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Confirm Password *"
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      secureTextEntry={!showConfirmPassword}
+                      editable={!isLoading}
+                      placeholderTextColor="#999"
+                    />
+                    <TouchableOpacity 
+                      style={styles.eyeButton}
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                    >
+                      <Ionicons 
+                        name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
+                        size={20} 
+                        color="#666" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Terms */}
+                  <View style={styles.termsContainer}>
+                    <Checkbox
+                      style={styles.checkbox}
+                      value={termsAgreed}
+                      onValueChange={setTermsAgreed}
+                      color={termsAgreed ? '#2AB576' : undefined}
+                    />
+                    <Text style={styles.termsText}>
+                      I agree to the Terms & Conditions and Privacy Policy *
+                    </Text>
+                  </View>
+
+                  {/* Sign Up Button */}
+                  <TouchableOpacity
+                    style={[
+                      styles.signUpButton, 
+                      (!passwordValidation.isValid || !termsAgreed) && styles.signUpButtonDisabled
+                    ]}
+                    onPress={handleSignUp}
+                    disabled={isLoading || !passwordValidation.isValid || !termsAgreed}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={styles.signUpButtonText}>Create Account</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Login Option */}
+                  <TouchableOpacity
+                    style={styles.loginOption}
+                    onPress={handleGoToLogin}
+                  >
+                    <Text style={styles.loginOptionText}>Already have an account? Sign In</Text>
                   </TouchableOpacity>
                 </View>
-
-                {/* Terms */}
-                <View style={styles.termsContainer}>
-                  <Checkbox
-                    style={styles.checkbox}
-                    value={termsAgreed}
-                    onValueChange={setTermsAgreed}
-                    color={termsAgreed ? '#2AB576' : undefined}
-                  />
-                  <Text style={styles.termsText}>
-                    I agree to the Terms & Conditions and Privacy Policy *
-                  </Text>
-                </View>
-
-                {/* Sign Up Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.signUpButton, 
-                    (!passwordValidation.isValid || !termsAgreed) && styles.signUpButtonDisabled
-                  ]}
-                  onPress={handleSignUp}
-                  disabled={isLoading || !passwordValidation.isValid || !termsAgreed}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    <Text style={styles.signUpButtonText}>Create Account</Text>
-                  )}
-                </TouchableOpacity>
-
-                {/* Login Option */}
-                <TouchableOpacity
-                  style={styles.loginOption}
-                  onPress={handleGoToLogin}
-                >
-                  <Text style={styles.loginOptionText}>Already have an account? Sign In</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+              </>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -467,6 +474,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  // Custom Top Bar Styles (White Background) - TITLE ON TOP
+  customTopBar: {
+    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+  },
+  topBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  textContainer: {
+    flex: 1,
+  },
+  topBarTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#000',
+    marginBottom: 4, // Space between title and subtitle
+  },
+  topBarSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#555',
+  },
+  keyboardView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -477,9 +513,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: 20,
     paddingBottom: 20,
-    minHeight: height,
+    minHeight: height * 0.7,
   },
   // Message Container
   messageContainer: {
@@ -573,38 +609,7 @@ const styles = StyleSheet.create({
   resendSpinner: {
     marginTop: 8,
   },
-  // Resend Button (old - keep for reference)
-  resendButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#2AB576',
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  resendButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 10,
-    textAlign: 'center',
-  },
   // Regular Form
-  header: {
-    marginBottom: 30,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-  },
   form: {
     width: '100%',
   },
