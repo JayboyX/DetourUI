@@ -1,4 +1,4 @@
-// src/contexts/AuthContext.tsx - WITH DATABASE VALIDATION
+// src/contexts/AuthContext.tsx - FIXED VERSION (No table changes)
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -133,6 +133,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // NEW: Check if user exists in database using existing columns
+  const checkUserExistsInDatabase = async (userId: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, email_verified')
+        .eq('id', userId)
+        .single();
+
+      // If error or no data, user doesn't exist
+      if (error || !data) {
+        console.log('User not found in database (checkUserExistsInDatabase):', userId);
+        return false;
+      }
+
+      // User exists in database
+      return true;
+    } catch (error) {
+      console.error('Error checking user in database:', error);
+      return false;
+    }
+  };
+
+  // NEW: Get fresh user data from database
+  const getUserFromDatabase = async (userId: string): Promise<User | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, full_name, email, email_verified, phone_number, profile_photo_url, created_at')
+        .eq('id', userId)
+        .single();
+
+      if (error || !data) {
+        return null;
+      }
+
+      return data as User;
+    } catch (error) {
+      console.error('Error getting user from database:', error);
+      return null;
+    }
+  };
+
   const checkKYCStatus = async (): Promise<KYCStatus> => {
     try {
       if (!user || !token) {
@@ -215,7 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.log('KYC state cleared - will re-check on next load');
   };
 
-  // FIXED: Now checks if user exists in database
+  // FIXED: Enhanced session validation with database existence check
   const validateSession = async (): Promise<boolean> => {
     try {
       const storedToken = await AsyncStorage.getItem('access_token');
@@ -225,46 +268,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return false;
       }
       
-      const parsedUser = JSON.parse(storedUser);
+      const parsedUser: User = JSON.parse(storedUser);
       
-      // CRITICAL FIX: Check if user exists in database
-      const { data: dbUser, error: dbError } = await supabase
-        .from('users')
-        .select('id, email, status, email_verified')
-        .eq('id', parsedUser.id)
-        .single();
+      // CRITICAL FIX: Check if user still exists in database
+      const userExists = await checkUserExistsInDatabase(parsedUser.id);
       
-      // If user doesn't exist in DB, clear storage
-      if (dbError || !dbUser) {
-        console.log('User not found in database, clearing auth');
+      if (!userExists) {
+        console.log('User no longer exists in database, clearing auth');
         await clearAuthStorage();
         return false;
       }
       
-      // Check if user is active
-      if (dbUser.status !== 'active') {
-        console.log('User account is not active');
+      // Get fresh user data from database
+      const dbUser = await getUserFromDatabase(parsedUser.id);
+      
+      if (!dbUser) {
+        console.log('Could not fetch user data from database');
         await clearAuthStorage();
         return false;
       }
       
-      // Update user data with latest from database
+      // Check if email is verified
+      if (!dbUser.email_verified) {
+        console.log('Email not verified, requiring verification');
+        // Don't clear auth, but mark as not fully authenticated
+        // User will be redirected to verification screen
+      }
+      
+      // Update stored user with fresh data
       const updatedUser = { ...parsedUser, ...dbUser };
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
       
-      // Also check verification with API
-      const response = await authAPI.checkVerification(parsedUser.email);
-      
-      if (response.data.success) {
-        if (isMountedRef.current) {
-          setToken(storedToken);
-          setUser(updatedUser);
-        }
-        return true;
-      } else {
-        await clearAuthStorage();
-        return false;
+      if (isMountedRef.current) {
+        setToken(storedToken);
+        setUser(updatedUser);
       }
+      
+      return true;
     } catch (error) {
       console.error('Session validation error:', error);
       await clearAuthStorage();
@@ -272,6 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // FIXED: Check database existence on app start
   const checkAndValidateStoredToken = async () => {
     try {
       setIsLoading(true);
@@ -280,12 +321,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedUser = await AsyncStorage.getItem('user');
       
       if (storedToken && storedUser) {
+        const parsedUser: User = JSON.parse(storedUser);
+        
+        // First check if user exists in database
+        const userExists = await checkUserExistsInDatabase(parsedUser.id);
+        
+        if (!userExists) {
+          console.log('User no longer exists in database, clearing auth on app start');
+          await clearAuthStorage();
+          
+          Alert.alert(
+            'Session Expired',
+            'Your account has been removed from the system.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        // User exists, validate the session
         const isValid = await validateSession();
         
         if (!isValid && isMountedRef.current) {
           Alert.alert(
             'Session Expired',
-            'Your account has been removed or deactivated.',
+            'Your session has expired. Please log in again.',
             [{ text: 'OK' }]
           );
         }
@@ -303,7 +362,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // FIXED: Now checks if user exists in database before storing
+  // FIXED: Enhanced signIn with database verification
   const signIn = async (data: SignInData) => {
     try {
       const response = await authAPI.login({
@@ -314,32 +373,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.data.success) {
         const { access_token, user: userData } = response.data.data;
         
-        // VERIFY USER EXISTS IN DATABASE
-        const { data: dbUser, error: dbError } = await supabase
-          .from('users')
-          .select('id, status, email_verified')
-          .eq('id', userData.id)
-          .single();
+        // CRITICAL: Verify user exists in database
+        const userExists = await checkUserExistsInDatabase(userData.id);
         
-        if (dbError || !dbUser) {
+        if (!userExists) {
           // User doesn't exist in database
           await clearAuthStorage();
           return { 
             success: false, 
-            error: 'Account not found' 
+            error: 'Account not found. Please sign up first.' 
           };
         }
         
-        if (dbUser.status !== 'active') {
-          // User is inactive
+        // Get fresh user data from database
+        const dbUser = await getUserFromDatabase(userData.id);
+        
+        if (!dbUser) {
           await clearAuthStorage();
           return { 
             success: false, 
-            error: 'Account is deactivated' 
+            error: 'Failed to load user data' 
           };
         }
         
-        // Update user data with database info
+        // Merge API user data with database user data
         const updatedUser = { ...userData, ...dbUser };
         
         // Store token and user data
@@ -387,8 +444,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // FIXED: Enhanced signUp with database check for existing email
   const signUp = async (data: SignUpData) => {
     try {
+      // First check if user already exists in database
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('email', data.email.toLowerCase())
+        .maybeSingle();
+
+      if (existingUser && !checkError) {
+        return { 
+          success: false, 
+          error: 'Email already registered. Please sign in instead.'
+        };
+      }
+
       const response = await authAPI.signup({
         full_name: data.full_name,
         email: data.email.toLowerCase(),
@@ -461,6 +533,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resendVerification = async (email: string) => {
     try {
+      // Check if user exists in database before resending
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id, email_verified')
+        .eq('email', email.toLowerCase())
+        .maybeSingle();
+
+      if (!existingUser) {
+        return { 
+          success: false, 
+          message: 'Email not found. Please sign up first.'
+        };
+      }
+
+      if (existingUser.email_verified) {
+        return { 
+          success: false, 
+          message: 'Email is already verified. Please sign in.'
+        };
+      }
+
       const response = await authAPI.resendVerification(email);
       
       if (response.data.success) {
@@ -574,16 +667,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // FIXED: Enhanced updateProfile with database sync
   const updateProfile = async (data: Partial<User>) => {
     try {
       if (!user) {
         throw new Error('No user logged in');
       }
 
-      console.log('Update profile data:', data);
-      
+      // Check user still exists in database
+      const userExists = await checkUserExistsInDatabase(user.id);
+      if (!userExists) {
+        await clearAuthStorage();
+        throw new Error('User no longer exists in database');
+      }
+
+      // Update in database
+      const { error: dbError } = await supabase
+        .from('users')
+        .update(data)
+        .eq('id', user.id);
+
+      if (dbError) {
+        console.error('Database update error:', dbError);
+        return { 
+          success: false, 
+          error: 'Failed to update profile in database' 
+        };
+      }
+
+      // Update local state
       const updatedUser = { ...user, ...data };
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      
       if (isMountedRef.current) {
         setUser(updatedUser);
       }
