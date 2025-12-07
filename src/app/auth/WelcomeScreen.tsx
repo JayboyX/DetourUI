@@ -1,3 +1,6 @@
+// ---------------------------------------------------------
+// 1. IMPORTS
+// ---------------------------------------------------------
 import React, { useEffect, useRef } from "react";
 import {
   StyleSheet,
@@ -11,15 +14,25 @@ import { useNavigation, NavigationProp } from "@react-navigation/native";
 
 const { width, height } = Dimensions.get("window");
 
+
+// ---------------------------------------------------------
+// 2. COMPONENT: WelcomeScreen
+// ---------------------------------------------------------
 export default function WelcomeScreen() {
   const navigation = useNavigation<NavigationProp<any>>();
 
-  // Animation values
+  // -------------------------------------------------------
+  // 2.1 ANIMATION VALUES
+  // -------------------------------------------------------
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
+
+  // -------------------------------------------------------
+  // 2.2 RUN ENTRY ANIMATION + AUTO NAVIGATION
+  // -------------------------------------------------------
   useEffect(() => {
-    // Combined animation sequence
+    // Logo fade + scale in
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -33,7 +46,7 @@ export default function WelcomeScreen() {
       }),
     ]).start();
 
-    // Navigate after delay - NOW GOES TO LOGIN SCREEN
+    // Auto-transition after 3 seconds
     const timer = setTimeout(() => {
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -46,12 +59,16 @@ export default function WelcomeScreen() {
           duration: 600,
           useNativeDriver: true,
         }),
-      ]).start(() => navigation.navigate("Login" as never)); // Changed from "Dashboard" to "Login"
+      ]).start(() => navigation.navigate("Login" as never));
     }, 3000);
 
     return () => clearTimeout(timer);
   }, []);
 
+
+  // -------------------------------------------------------
+  // 2.3 RENDER UI
+  // -------------------------------------------------------
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -65,7 +82,7 @@ export default function WelcomeScreen() {
           ]}
         >
           <Image
-            source={require("../../assets/detourlogo.png")}
+            source={require("../../../assets/detourlogo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -75,6 +92,10 @@ export default function WelcomeScreen() {
   );
 }
 
+
+// ---------------------------------------------------------
+// 3. STYLES
+// ---------------------------------------------------------
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -87,8 +108,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   logoContainer: {
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
   },
   logo: {
     width: 220,

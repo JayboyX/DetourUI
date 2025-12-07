@@ -1,0 +1,62 @@
+src/
+│
+├── app/                           # All screens grouped by feature
+│   │
+│   ├── auth/
+│   │   ├── WelcomeScreen.tsx
+│   │   ├── LoginScreen.tsx
+│   │   ├── SignUpScreen.tsx
+│   │   └── EmailVerificationScreen.tsx
+│   │
+│   ├── onboarding/
+│   │   ├── KYCScreen.tsx
+│   │   └── OTPScreen.tsx
+│   │
+│   ├── dashboard/
+│   │   └── DashboardScreen.tsx
+│   │
+│   ├── wallet/
+│   │   ├── WalletScreen.tsx
+│   │   ├── WithdrawalScreen.tsx
+│   │   └── StatementsScreen.tsx
+│   │
+│   ├── subscription/
+│   │   └── SubscriptionScreen.tsx
+│   │
+│   ├── advances/
+│   │   └── AdvanceScreen.tsx
+│   │
+│   ├── payments/
+│   │   └── BuyScreen.tsx
+│   │
+│   ├── rewards/
+│   │   └── RewardsScreen.tsx
+│   │
+│   ├── profile/
+│   │   └── ProfileScreen.tsx
+│   │
+│   └── misc/
+│       └── NotificationsScreen.tsx
+│
+│
+├── components/
+│   ├── TopBar.tsx
+│   ├── BottomNav.tsx
+│   └── Loader.tsx
+│
+│
+├── context/
+│   └── AuthContext.tsx
+│
+│
+├── services/
+│   ├── api.ts
+│
+│
+├── lib/
+│   └── supabase.ts
+│
+├── types/
+│   └── auth.ts
+│
+└── app.jsx

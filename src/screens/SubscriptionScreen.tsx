@@ -8,10 +8,16 @@ import {
   Platform,
   UIManager,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
+
 import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
 import { Ionicons } from "@expo/vector-icons";
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { useNavigation } from "@react-navigation/native";
 
 // Enable animation on Android
 if (Platform.OS === "android") {
@@ -20,8 +26,11 @@ if (Platform.OS === "android") {
 }
 
 export default function SubscriptionScreen() {
-  const currentPlan = "Professional Driver";
+  const navigation = useNavigation();
+  const { user } = useAuth();
+
   const [expanded, setExpanded] = useState(null);
+  const [loadingPlan, setLoadingPlan] = useState(null);
 
   const toggleExpand = (name) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -30,8 +39,9 @@ export default function SubscriptionScreen() {
 
   const tiers = [
     {
+      id: "on_the_go",
       name: "On-The-Go",
-      price: "R75.00",
+      price: 75,
       period: "Weekly for 12 Months",
       description:
         "For new Uber drivers who need basic support and starting benefits.",
@@ -45,8 +55,9 @@ export default function SubscriptionScreen() {
       ],
     },
     {
+      id: "professional_driver",
       name: "Professional Driver",
-      price: "R125.00",
+      price: 125,
       period: "Weekly for 12 Months",
       description:
         "For full-time Uber drivers who rely on driving as their primary income.",
@@ -60,8 +71,9 @@ export default function SubscriptionScreen() {
       ],
     },
     {
+      id: "my_own_boss",
       name: "MyOwnBoss",
-      price: "R175.00",
+      price: 175,
       period: "Weekly for 12 Months",
       description:
         "For business-focused drivers wanting long-term financial stability.",
@@ -76,13 +88,52 @@ export default function SubscriptionScreen() {
     },
   ];
 
+  // ----------------------------------------------------------
+  // SUBSCRIBE ACTION — Calls Backend /subscriptions/activate
+  // ----------------------------------------------------------
+  const handleSubscribe = async (tier) => {
+    try {
+      if (!user?.id) {
+        Alert.alert("Error", "User not logged in");
+        return;
+      }
+
+      setLoadingPlan(tier.id);
+
+      const { data, error } = await supabase.functions.invoke(
+        "proxy-subscriptions-activate",
+        {
+          method: "POST",
+          body: {
+            user_id: user.id,
+            package_id: tier.id,
+          },
+        }
+      );
+
+      setLoadingPlan(null);
+
+      if (error || !data?.success) {
+        Alert.alert("Subscription Failed", data?.message || "Unable to subscribe");
+        return;
+      }
+
+      Alert.alert("Success", "Your subscription has been activated!", [
+        {
+          text: "OK",
+          onPress: () => navigation.navigate("Dashboard"),
+        },
+      ]);
+    } catch (err) {
+      console.error(err);
+      setLoadingPlan(null);
+      Alert.alert("Error", "Something went wrong");
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <TopBar
-        title="Subscription"
-        subtitle="Manage your plan"
-        showBackButton={true}
-      />
+      <TopBar title="Subscription" subtitle="Manage your plan" showBackButton />
 
       <ScrollView
         contentContainerStyle={styles.contentContainer}
@@ -90,7 +141,6 @@ export default function SubscriptionScreen() {
       >
         {tiers.map((tier, index) => {
           const isExpanded = expanded === tier.name;
-          const isCurrent = tier.name === currentPlan;
 
           return (
             <TouchableOpacity
@@ -104,16 +154,10 @@ export default function SubscriptionScreen() {
                 <View style={styles.headerText}>
                   <Text style={styles.name}>{tier.name}</Text>
 
-                  {isCurrent && (
-                    <View style={styles.currentBadge}>
-                      <Text style={styles.currentBadgeText}>Current Plan</Text>
-                    </View>
-                  )}
-
                   <Text style={styles.description}>{tier.description}</Text>
 
                   <View style={styles.priceRow}>
-                    <Text style={styles.price}>{tier.price}</Text>
+                    <Text style={styles.price}>R{tier.price}.00</Text>
                     <Text style={styles.period}> / {tier.period}</Text>
                   </View>
                 </View>
@@ -125,7 +169,7 @@ export default function SubscriptionScreen() {
                 />
               </View>
 
-              {/* COLLAPSED HINT */}
+              {/* COLLAPSED */}
               {!isExpanded && (
                 <Text style={styles.tapHint}>Tap to view details</Text>
               )}
@@ -147,20 +191,18 @@ export default function SubscriptionScreen() {
                     </View>
                   ))}
 
-                  {isCurrent ? (
-                    <View style={styles.activeBox}>
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={20}
-                        color="#2AB576"
-                      />
-                      <Text style={styles.activeText}>Active Plan</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity style={styles.subscribeButton}>
+                  {/* SUBSCRIBE BUTTON */}
+                  <TouchableOpacity
+                    style={styles.subscribeButton}
+                    onPress={() => handleSubscribe(tier)}
+                    disabled={loadingPlan === tier.id}
+                  >
+                    {loadingPlan === tier.id ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
                       <Text style={styles.subscribeText}>Subscribe</Text>
-                    </TouchableOpacity>
-                  )}
+                    )}
+                  </TouchableOpacity>
                 </View>
               )}
             </TouchableOpacity>
@@ -174,15 +216,8 @@ export default function SubscriptionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FAFAFA",
-  },
-
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 120,
-  },
+  container: { flex: 1, backgroundColor: "#FAFAFA" },
+  contentContainer: { padding: 16, paddingBottom: 120 },
 
   card: {
     backgroundColor: "#FFF",
@@ -193,36 +228,10 @@ const styles = StyleSheet.create({
     borderColor: "#E9ECEF",
   },
 
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
+  headerRow: { flexDirection: "row", justifyContent: "space-between" },
+  headerText: { flex: 1, paddingRight: 10 },
 
-  headerText: {
-    flex: 1,
-    paddingRight: 10,
-  },
-
-  name: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#000",
-  },
-
-  currentBadge: {
-    marginTop: 4,
-    alignSelf: "flex-start",
-    backgroundColor: "#E0F2FF",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-
-  currentBadgeText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#0A4AAA",
-  },
+  name: { fontSize: 20, fontWeight: "700", color: "#000" },
 
   description: {
     marginTop: 6,
@@ -231,30 +240,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  priceRow: {
-    flexDirection: "row",
-    marginTop: 10,
-  },
+  priceRow: { flexDirection: "row", marginTop: 10 },
+  price: { fontSize: 22, fontWeight: "800", color: "#2AB576" },
+  period: { fontSize: 14, color: "#777", marginTop: 6, marginLeft: 4 },
 
-  price: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#2AB576",
-  },
-
-  period: {
-    fontSize: 14,
-    color: "#777",
-    marginTop: 6,
-    marginLeft: 4,
-  },
-
-  tapHint: {
-    marginTop: 12,
-    fontSize: 13,
-    color: "#888",
-    textAlign: "left",
-  },
+  tapHint: { marginTop: 12, fontSize: 13, color: "#888" },
 
   expanded: {
     marginTop: 16,
@@ -263,11 +253,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
 
-  benefitsTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+  benefitsTitle: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
 
   benefitRow: {
     flexDirection: "row",
@@ -275,12 +261,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  benefitText: {
-    fontSize: 14,
-    color: "#444",
-    flex: 1,
-    lineHeight: 20,
-  },
+  benefitText: { fontSize: 14, color: "#444", flex: 1, lineHeight: 20 },
 
   subscribeButton: {
     marginTop: 20,
@@ -290,28 +271,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  subscribeText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  activeBox: {
-    marginTop: 20,
-    backgroundColor: "#EDFDF5",
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#2AB576",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  activeText: {
-    marginLeft: 6,
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#2AB576",
-  },
+  subscribeText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
 });

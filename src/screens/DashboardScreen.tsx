@@ -1,4 +1,4 @@
-// src/screens/DashboardScreen.tsx - WITH KYC CHECK & REAL-TIME WALLET
+// src/screens/DashboardScreen.tsx
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -30,7 +30,35 @@ export default function DashboardScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch wallet data
+  // -------------------------------
+  // CHECK ACTIVE SUBSCRIPTION
+  // -------------------------------
+  const checkUserSubscription = async () => {
+    try {
+      if (!user?.id) return false;
+
+      const { data, error } = await supabase
+        .from("user_subscriptions")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Subscription check error:", error);
+        return false;
+      }
+
+      return !!data; // true if subscription exists
+    } catch (error) {
+      console.error("Subscription check exception:", error);
+      return false;
+    }
+  };
+
+  // -------------------------------
+  // FETCH WALLET
+  // -------------------------------
   const fetchWallet = async () => {
     try {
       if (!user?.id) return;
@@ -43,7 +71,7 @@ export default function DashboardScreen({ navigation }) {
         .single();
 
       if (error) {
-        console.error("Error fetching wallet:", error);
+        console.error("Wallet fetch error:", error);
         setWallet(null);
       } else {
         setWallet(data);
@@ -57,14 +85,14 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
-  // Add real-time subscription
+  // -------------------------------
+  // REALTIME WALLET UPDATES
+  // -------------------------------
   useEffect(() => {
     if (!user?.id) return;
 
-    // Initial fetch
     fetchWallet();
 
-    // Subscribe to wallet changes
     const channel = supabase
       .channel(`wallet_changes_${user.id}`)
       .on(
@@ -90,63 +118,73 @@ export default function DashboardScreen({ navigation }) {
     };
   }, [user?.id]);
 
-  // KYC check on entry
+  // -------------------------------
+  // FLOW CONTROL (KYC + SUBSCRIPTION)
+  // -------------------------------
   useFocusEffect(
     React.useCallback(() => {
-      const checkKYCOnEntry = async () => {
+      const runChecks = async () => {
         try {
+          // 1. KYC CHECK
           const kycResult = await checkKYCStatus();
-          
-          // If KYC is not complete, redirect to KYC screen
+
           if (!kycResult.isComplete) {
-            console.log('KYC incomplete, redirecting...');
-            navigation.navigate("KYC");
+            console.log("KYC incomplete → redirecting to KYC");
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "KYC" }],
+            });
+            return;
+          }
+
+          // 2. SUBSCRIPTION CHECK
+          const hasSub = await checkUserSubscription();
+
+          if (!hasSub) {
+            console.log("No subscription → redirecting to Subscription");
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "Subscription" }],
+            });
+            return;
           }
         } catch (error) {
-          console.error('Error checking KYC on dashboard entry:', error);
+          console.error("Flow error:", error);
         }
       };
 
-      checkKYCOnEntry();
+      runChecks();
     }, [navigation, checkKYCStatus])
   );
 
-  // Initial KYC check
+  // Initial load
   useEffect(() => {
-    const checkInitialKYC = async () => {
-      try {
-        const kycResult = await checkKYCStatus();
-        
-        if (!kycResult.isComplete) {
-          console.log('Initial KYC check incomplete');
-        }
-      } catch (error) {
-        console.error('Error in initial KYC check:', error);
-      }
-    };
-
-    checkInitialKYC();
-  }, [checkKYCStatus]);
+    fetchWallet();
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchWallet();
   };
 
-  // Format balance display
+  // -------------------------------
+  // UI HELPERS
+  // -------------------------------
+
   const formatBalance = (balance: string) => {
     const amount = parseFloat(balance || "0");
     return `R ${amount.toFixed(2)}`;
   };
 
-  // Calculate available advance (80% of balance)
   const calculateAvailableAdvance = () => {
     if (!wallet?.balance) return "0.00";
     const balance = parseFloat(wallet.balance);
-    const available = balance * 0.8;
-    return available.toFixed(2);
+    return (balance * 0.8).toFixed(2);
   };
 
+  // -------------------------------
+  // RENDER
+  // -------------------------------
   return (
     <View style={styles.container}>
       <TopBar />
@@ -156,8 +194,8 @@ export default function DashboardScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             colors={["#2AB576"]}
             tintColor="#2AB576"
@@ -187,7 +225,6 @@ export default function DashboardScreen({ navigation }) {
                 {formatBalance(wallet.balance)}
               </Text>
 
-              {/* Divider */}
               <View style={styles.divider} />
 
               <View style={styles.walletRow}>
@@ -207,8 +244,6 @@ export default function DashboardScreen({ navigation }) {
           ) : (
             <>
               <Text style={styles.balanceText}>R 0.00</Text>
-              
-              {/* Divider */}
               <View style={styles.divider} />
 
               <View style={styles.walletRow}>
@@ -250,7 +285,6 @@ export default function DashboardScreen({ navigation }) {
         {/* BENEFITS */}
         <Text style={styles.sectionTitle}>Your Benefits</Text>
 
-        {/* Benefit: Health & Safety */}
         <TouchableOpacity style={styles.benefitCard}>
           <Ionicons name="shield-checkmark-outline" size={26} color="#2AB576" />
           <View style={styles.benefitInfo}>
@@ -262,8 +296,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
 
-        {/* Benefit: Rewards */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.benefitCard}
           onPress={() => navigation.navigate("Rewards")}
         >
@@ -277,7 +310,6 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
 
-        {/* Benefit: Detour Energy */}
         <TouchableOpacity style={styles.benefitCard}>
           <Ionicons name="flame-outline" size={26} color="#4CAF50" />
           <View style={styles.benefitInfo}>
@@ -289,8 +321,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
 
-        {/* Benefit: Buy (Airtime, Data, Bundles) */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.benefitCard}
           onPress={() => navigation.navigate("Buy")}
         >
@@ -304,7 +335,6 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
 
-        {/* Benefit: Statements */}
         <TouchableOpacity
           style={styles.benefitCard}
           onPress={() => navigation.navigate("Statements")}
@@ -319,8 +349,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
 
-        {/* Benefit: Withdrawal */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.benefitCard}
           onPress={() => navigation.navigate("Withdrawal")}
         >
@@ -334,7 +363,6 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
 
-        {/* Benefit: Subscription Management */}
         <TouchableOpacity
           style={styles.benefitCard}
           onPress={() => navigation.navigate("Subscription")}
@@ -349,7 +377,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
 
-        {/* PROMO BANNER (MATCHED TO UI) */}
+        {/* Promo Banner */}
         <View style={styles.bannerWrapper}>
           <View style={styles.bannerLeftAccent} />
           <View style={styles.bannerCard}>
@@ -366,13 +394,14 @@ export default function DashboardScreen({ navigation }) {
   );
 }
 
+// ---------------------------------------------------
+// STYLES
+// ---------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F8F9FA",
   },
-
-  // --- WALLET CARD ---
   walletCard: {
     backgroundColor: "#fff",
     marginTop: 20,
@@ -410,8 +439,6 @@ const styles = StyleSheet.create({
     color: "#2AB576",
     marginTop: 4,
   },
-
-  // --- SECTION TITLE ---
   sectionTitle: {
     marginTop: 25,
     marginLeft: 18,
@@ -419,8 +446,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#000",
   },
-
-  // --- QUICK ACTIONS ---
   quickActionsContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -455,9 +480,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontWeight: "700",
   },
-
-
-  // --- BENEFITS ---
   benefitCard: {
     backgroundColor: "#fff",
     marginHorizontal: 16,
@@ -480,8 +502,6 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 2,
   },
-
-  // --- PROMO BANNER (MATCHED TO UI) ---
   bannerWrapper: {
     flexDirection: "row",
     marginHorizontal: 16,
@@ -511,3 +531,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
+

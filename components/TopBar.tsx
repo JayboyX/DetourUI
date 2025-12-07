@@ -1,3 +1,4 @@
+// components/TopBar.tsx
 import React from "react";
 import {
   View,
@@ -16,12 +17,14 @@ interface TopBarProps {
   title?: string;
   subtitle?: string;
   showBackButton?: boolean;
+  backgroundColor?: string;
 }
 
 export default function TopBar({
   title,
   subtitle,
   showBackButton = false,
+  backgroundColor,
 }: TopBarProps) {
   const { user } = useAuth();
   const navigation = useNavigation();
@@ -36,36 +39,36 @@ export default function TopBar({
     return user.full_name.split(" ")[0];
   };
 
-  // Dashboard uses name + subtitle by default
-  const isDashboard = !showBackButton;
+  // Determine dashboard mode
+  const isDashboard = !title && !subtitle && user;
 
-  const displayTitle = title || getFirstName();
-  const displaySubtitle = subtitle || "Welcome back";
+  // Title + subtitle logic
+  const displayTitle = title || (isDashboard ? getFirstName() : "");
+  const displaySubtitle = subtitle || (isDashboard ? "Welcome back" : "");
 
   const handleBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
   };
 
+  // Determine background color
+  const bgColor = backgroundColor || (isDashboard ? "#2AB576" : "#FFFFFF");
+
   return (
     <SafeAreaView
       edges={["top"]}
-      style={[
-        styles.safeArea,
-        { backgroundColor: isDashboard ? "#2AB576" : "#FFFFFF" },
-      ]}
+      style={[styles.safeArea, { backgroundColor: bgColor }]}
     >
       <View
         style={[
           styles.container,
-          { backgroundColor: isDashboard ? "#2AB576" : "#FFFFFF" },
+          { backgroundColor: bgColor },
         ]}
       >
-        {/* MAIN ROW */}
         <View style={styles.row}>
-          {/* BACK BUTTON OR NOTHING (NO PLACEHOLDER ON DASHBOARD) */}
+          {/* BACK BUTTON */}
           {showBackButton && (
             <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-              <Ionicons name="chevron-back" size={26} color="#000" />
+              <Ionicons name="chevron-back" size={26} color={isDashboard ? "#FFF" : "#000"} />
             </TouchableOpacity>
           )}
 
@@ -76,24 +79,30 @@ export default function TopBar({
               { marginLeft: showBackButton ? 10 : 0 },
             ]}
           >
-            {/* TITLE FIRST on NON-DASHBOARD SCREENS */}
-            {!isDashboard && (
+            {/* Non-dashboard TITLE */}
+            {!isDashboard && title && (
               <Text style={[styles.title, { color: "#000" }]}>
                 {displayTitle}
               </Text>
             )}
 
-            {/* SUBTITLE */}
-            <Text
-              style={[
-                styles.subtitle,
-                { color: isDashboard ? "rgba(255,255,255,0.9)" : "#555" },
-              ]}
-            >
-              {displaySubtitle}
-            </Text>
+            {/* Subtitle */}
+            {displaySubtitle !== "" && (
+              <Text
+                style={[
+                  styles.subtitle,
+                  {
+                    color: isDashboard
+                      ? "rgba(255,255,255,0.9)"
+                      : "#555",
+                  },
+                ]}
+              >
+                {displaySubtitle}
+              </Text>
+            )}
 
-            {/* DASHBOARD ONLY: TITLE BELOW SUBTITLE */}
+            {/* Dashboard: subtitle THEN title */}
             {isDashboard && (
               <Text style={[styles.title, { color: "#FFF" }]}>
                 {displayTitle}
@@ -101,7 +110,7 @@ export default function TopBar({
             )}
           </View>
 
-          {/* AVATAR ONLY ON DASHBOARD */}
+          {/* Avatar only shown on Dashboard */}
           {isDashboard ? (
             <View style={styles.avatarContainer}>
               {user?.profile_photo_url ? (
@@ -150,14 +159,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // SUBTITLE (always smaller)
   subtitle: {
     fontSize: 14,
     fontWeight: "400",
     marginBottom: 2,
   },
 
-  // TITLE (always bigger)
   title: {
     fontSize: 26,
     fontWeight: "700",
