@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,20 +6,33 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
+import { useAuth } from "../../src/contexts/AuthContext";
+
+const EXTERNAL_API = process.env.EXPO_PUBLIC_EXTERNAL_API; // Withdrawals + wallet
 
 export default function CashOutScreen() {
+  const { user } = useAuth();
+
   const [amount, setAmount] = useState("");
 
-  // Card storage placeholder (later from DB)
+  const [wallet, setWallet] = useState(null);
+  const [loadingWallet, setLoadingWallet] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Card Management
   const [cards, setCards] = useState([
     { id: 1, name: "John M", last4: "5364", default: true },
   ]);
 
   const [selectedCard, setSelectedCard] = useState(cards[0]);
   const [showCardFields, setShowCardFields] = useState(false);
+  const [askDefault, setAskDefault] = useState(false);
+
   const [newCard, setNewCard] = useState({
     number: "",
     name: "",
@@ -27,11 +40,75 @@ export default function CashOutScreen() {
     expiry: "",
   });
 
-  const [askDefault, setAskDefault] = useState(false);
+  // -------------------------------
+  // FETCH WALLET
+  // -------------------------------
+  const fetchWallet = async () => {
+    try {
+      const url = `${EXTERNAL_API}/api/wallets/user/${user.id}`;
+      const res = await fetch(url);
+      const json = await res.json();
 
-  const walletBalance = 0.0;
+      if (json.success && json.data.has_wallet) {
+        setWallet(json.data.wallet);
+      } else {
+        Alert.alert("Error", "Wallet not found.");
+      }
+    } catch (err) {
+      console.log("Wallet fetch error:", err);
+      Alert.alert("Error", "Unable to fetch wallet.");
+    } finally {
+      setLoadingWallet(false);
+    }
+  };
 
-  // Function to save new card
+  useEffect(() => {
+    fetchWallet();
+  }, []);
+
+  // -------------------------------
+  // PERFORM REAL WITHDRAWAL
+  // -------------------------------
+  const performWithdrawal = async () => {
+    if (!wallet) return Alert.alert("Error", "Wallet unavailable.");
+    if (!amount || Number(amount) <= 0)
+      return Alert.alert("Invalid Amount", "Enter a valid amount.");
+
+    setSubmitting(true);
+
+    try {
+      const url = `${EXTERNAL_API}/api/wallets/${wallet.id}/withdraw/quick?amount=${amount}&currency=ZAR&description=Quick%20withdrawal`;
+
+      const res = await fetch(url, { method: "POST" });
+      const json = await res.json();
+
+      if (!json.success) {
+        Alert.alert("Withdrawal Failed", json.message);
+        setSubmitting(false);
+        return;
+      }
+
+      Alert.alert(
+        "Success",
+        `R${amount} withdrawn successfully.\nReference: ${json.data?.withdrawal_details?.provider_reference}`
+      );
+
+      // Reset UI input
+      setAmount("");
+
+      // 🔥 QUICK REFRESH AFTER CASH OUT
+      await fetchWallet();
+    } catch (err) {
+      console.log("Withdraw error:", err);
+      Alert.alert("Error", "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // -------------------------------
+  // CARD SAVING FLOW
+  // -------------------------------
   const saveNewCard = (makeDefault) => {
     const last4 = newCard.number.slice(-4);
 
@@ -58,39 +135,36 @@ export default function CashOutScreen() {
     setShowCardFields(false);
     setAskDefault(false);
 
-    // Reset new card inputs
     setNewCard({ number: "", name: "", cvv: "", expiry: "" });
 
-    // Auto cash out if default is chosen
-    if (makeDefault) {
-      handleCashOut(newCardObj);
-    }
-  };
-
-  // Cash out handler
-  const handleCashOut = (card) => {
-    const usedCard = card || selectedCard;
-
-    console.log("Processing Cash Out:", {
-      amount,
-      cardUsed: usedCard,
-    });
-
-    // Later integrate API call here
-    alert(`Cash Out of R${amount} processed using card ****${usedCard.last4}`);
+    // AUTO-CASH OUT if new default
+    if (makeDefault) performWithdrawal();
   };
 
   const multipleCardsAvailable = cards.length > 1;
+
+  // -------------------------------
+  // UI
+  // -------------------------------
+  if (loadingWallet) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center" }}>
+        <ActivityIndicator size="large" color="#2AB576" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <TopBar title="Cash Out" subtitle="Withdraw to your card" showBackButton />
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* AVAILABLE BALANCE */}
+        {/* BALANCE */}
         <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Available to Cash out</Text>
-          <Text style={styles.balanceAmount}>R{walletBalance.toFixed(2)}</Text>
+          <Text style={styles.balanceLabel}>Available to Cash Out</Text>
+          <Text style={styles.balanceAmount}>
+            R{Number(wallet?.balance || 0).toFixed(2)}
+          </Text>
         </View>
 
         {/* AMOUNT INPUT */}
@@ -105,18 +179,12 @@ export default function CashOutScreen() {
           />
         </View>
 
-        {/* CARD SELECTION */}
+        {/* CARD SWITCHING */}
         {!showCardFields && !askDefault && (
           <>
-            {/* Default Card */}
             <Text style={styles.sectionTitle}>Card to use</Text>
 
-            <TouchableOpacity
-              style={styles.cardSelectBox}
-              onPress={() =>
-                multipleCardsAvailable && setShowCardFields(false)
-              }
-            >
+            <TouchableOpacity style={styles.cardSelectBox}>
               <View>
                 <Text style={styles.cardSelectLabel}>Name:</Text>
                 <Text style={styles.cardSelectValue}>{selectedCard.name}</Text>
@@ -130,7 +198,6 @@ export default function CashOutScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Switch Card Option */}
             {multipleCardsAvailable && (
               <>
                 <Text style={styles.sectionTitle}>Switch Card</Text>
@@ -153,12 +220,12 @@ export default function CashOutScreen() {
               </>
             )}
 
-            {/* Add New Card */}
+            {/* ADD NEW CARD */}
             <TouchableOpacity
               onPress={() => setShowCardFields(true)}
               style={styles.changeCardBtn}
             >
-              <Text style={styles.changeCardText}>Click to change card</Text>
+              <Text style={styles.changeCardText}>Add / Change Card</Text>
             </TouchableOpacity>
           </>
         )}
@@ -182,7 +249,7 @@ export default function CashOutScreen() {
             <View style={styles.inputBox}>
               <TextInput
                 style={styles.inputText}
-                placeholder="Name on card"
+                placeholder="Name on Card"
                 placeholderTextColor="#9b9b9b"
                 value={newCard.name}
                 onChangeText={(t) => setNewCard({ ...newCard, name: t })}
@@ -195,8 +262,8 @@ export default function CashOutScreen() {
                   style={styles.inputText}
                   placeholder="CVV"
                   placeholderTextColor="#9b9b9b"
-                  keyboardType="numeric"
                   maxLength={4}
+                  keyboardType="numeric"
                   value={newCard.cvv}
                   onChangeText={(t) => setNewCard({ ...newCard, cvv: t })}
                 />
@@ -213,7 +280,6 @@ export default function CashOutScreen() {
               </View>
             </View>
 
-            {/* CONTINUE BUTTON */}
             <TouchableOpacity
               style={styles.saveCardBtn}
               onPress={() => setAskDefault(true)}
@@ -226,27 +292,21 @@ export default function CashOutScreen() {
         {/* ASK IF DEFAULT */}
         {askDefault && (
           <View style={{ marginTop: 20 }}>
-            <Text style={styles.sectionTitle}>
-              Make this your default card?
-            </Text>
+            <Text style={styles.sectionTitle}>Make this your default card?</Text>
 
-            {/* YES */}
             <TouchableOpacity
               style={styles.defaultBtn}
               onPress={() => saveNewCard(true)}
             >
-              <Text style={styles.defaultBtnText}>Yes, make it default</Text>
+              <Text style={styles.defaultBtnText}>Yes — Set as Default</Text>
             </TouchableOpacity>
 
-            {/* NO */}
             <TouchableOpacity
               style={[styles.defaultBtn, { backgroundColor: "#DDD" }]}
               onPress={() => saveNewCard(false)}
             >
-              <Text
-                style={[styles.defaultBtnText, { color: "#000" }]}
-              >
-                No, keep old default
+              <Text style={[styles.defaultBtnText, { color: "#000" }]}>
+                No — Keep Old Default
               </Text>
             </TouchableOpacity>
           </View>
@@ -256,9 +316,14 @@ export default function CashOutScreen() {
         {!showCardFields && !askDefault && (
           <TouchableOpacity
             style={styles.cashOutBtn}
-            onPress={() => handleCashOut()}
+            onPress={performWithdrawal}
+            disabled={submitting}
           >
-            <Text style={styles.cashOutText}>Cash Out</Text>
+            {submitting ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.cashOutText}>Cash Out</Text>
+            )}
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -268,12 +333,13 @@ export default function CashOutScreen() {
   );
 }
 
+// -------------------------------
+// STYLES
+// -------------------------------
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F8F9FA" },
-
   content: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 140 },
 
-  /* Balance */
   balanceCard: {
     backgroundColor: "#0F172A",
     padding: 20,
@@ -283,7 +349,6 @@ const styles = StyleSheet.create({
   balanceLabel: { color: "#C9D1D9", fontSize: 13 },
   balanceAmount: { color: "#FFF", fontSize: 36, fontWeight: "800" },
 
-  /* Input */
   inputBox: {
     borderWidth: 1,
     borderColor: "#D9D9D9",
@@ -295,7 +360,6 @@ const styles = StyleSheet.create({
   },
   inputText: { fontSize: 15, color: "#000" },
 
-  /* Sections */
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
@@ -303,7 +367,6 @@ const styles = StyleSheet.create({
     color: "#2E2E2E",
   },
 
-  /* Default Card Display */
   cardSelectBox: {
     backgroundColor: "#F4F4F4",
     padding: 14,
@@ -315,7 +378,6 @@ const styles = StyleSheet.create({
   cardSelectLabel: { color: "#555" },
   cardSelectValue: { fontWeight: "700", color: "#111" },
 
-  /* Card Options */
   cardOption: {
     padding: 14,
     borderRadius: 10,
@@ -329,7 +391,6 @@ const styles = StyleSheet.create({
   },
   cardOptionText: { fontSize: 14, color: "#111" },
 
-  /* Change card */
   changeCardBtn: { marginTop: 10, marginBottom: 20 },
   changeCardText: {
     color: "#2AB576",
@@ -337,18 +398,13 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
 
-  /* Buttons */
   saveCardBtn: {
     backgroundColor: "#2AB576",
     paddingVertical: 16,
     borderRadius: 10,
     alignItems: "center",
   },
-  saveCardText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
+  saveCardText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
 
   defaultBtn: {
     backgroundColor: "#2AB576",
@@ -367,4 +423,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cashOutText: { color: "#FFF", fontSize: 16, fontWeight: "700" },
+
+  row: { flexDirection: "row", justifyContent: "space-between" },
 });

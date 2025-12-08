@@ -11,8 +11,6 @@ import {
   Animated,
   Alert,
   Pressable,
-  Platform,
-  UIManager,
   Keyboard,
 } from "react-native";
 
@@ -20,26 +18,9 @@ import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/contexts/AuthContext";
-
-import AnimatedRe, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  runOnJS,
-  interpolate,
-  Extrapolate,
-} from "react-native-reanimated";
-
-import { PanGestureHandler } from "react-native-gesture-handler";
 import * as Haptics from "expo-haptics";
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL;
-
-// Enable layout animations on Android
-if (Platform.OS === "android") {
-  UIManager.setLayoutAnimationEnabledExperimental &&
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 export default function SubscriptionScreen({ navigation }) {
   const { user } = useAuth();
@@ -55,10 +36,11 @@ export default function SubscriptionScreen({ navigation }) {
   const [confirmType, setConfirmType] = useState(null);
   const [selectedPackage, setSelectedPackage] = useState(null);
 
+  // Toast animation
   const successAnim = useRef(new Animated.Value(0)).current;
 
-  // ---- bottom sheet animation ----
-  const sheetY = useSharedValue(350);
+  // Modal slide animation (NO WORKLETS)
+  const slideAnim = useRef(new Animated.Value(300)).current;
 
   useEffect(() => {
     loadPage();
@@ -87,60 +69,39 @@ export default function SubscriptionScreen({ navigation }) {
     setExpanded(expanded === name ? null : name);
   };
 
-  // -------------------------------------------------------------
-  // OPEN BOTTOM SHEET
-  // -------------------------------------------------------------
+  // -------------------------------
+  // OPEN BOTTOM SHEET (no worklets)
+  // -------------------------------
   const openSheet = () => {
     Keyboard.dismiss();
     setConfirmVisible(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    sheetY.value = withSpring(0, {
-      damping: 16,
-      stiffness: 160,
-      mass: 0.6,
-    });
+    slideAnim.setValue(300);
+
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      useNativeDriver: true,
+    }).start();
   };
 
-  // -------------------------------------------------------------
-  // CLOSE BOTTOM SHEET
-  // -------------------------------------------------------------
+  // -------------------------------
+  // CLOSE SHEET
+  // -------------------------------
   const closeSheet = () => {
-    Keyboard.dismiss();
-    sheetY.value = withSpring(350, { damping: 14 }, () => {
-      runOnJS(() => {
-        setConfirmVisible(false);
-        setConfirmText("");
-      })();
+    Animated.timing(slideAnim, {
+      toValue: 300,
+      duration: 180,
+      useNativeDriver: true,
+    }).start(() => {
+      setConfirmVisible(false);
+      setConfirmText("");
     });
   };
 
-  // -------------------------------------------------------------
-  // DRAG GESTURE
-  // -------------------------------------------------------------
-  const onGesture = (event) => {
-    if (event.translationY > 0) {
-      sheetY.value = event.translationY;
-    }
-  };
-
-  const onGestureEnd = (event) => {
-    if (event.translationY > 120) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      closeSheet();
-    } else {
-      sheetY.value = withSpring(0);
-    }
-  };
-
-  const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: sheetY.value }],
-    opacity: interpolate(sheetY.value, [0, 350], [1, 0.85], Extrapolate.CLAMP),
-  }));
-
-  // -------------------------------------------------------------
-  // Subscription Logic
-  // -------------------------------------------------------------
+  // -------------------------------
+  // SUBSCRIBE HANDLER
+  // -------------------------------
   const handleSubscribePress = (pkg) => {
     const newPrice = Number(pkg.price);
     const currentPrice = activeSub ? Number(activeSub.current_weekly_price) : null;
@@ -154,6 +115,9 @@ export default function SubscriptionScreen({ navigation }) {
     openSheet();
   };
 
+  // -------------------------------
+  // SUCCESS TOAST ANIMATION
+  // -------------------------------
   const animateSuccess = () => {
     successAnim.setValue(0);
     Animated.timing(successAnim, {
@@ -167,7 +131,7 @@ export default function SubscriptionScreen({ navigation }) {
     const word = confirmType;
 
     if (confirmText.trim() !== word) {
-      Alert.alert("Incorrect Confirmation", `You must type "${word}" exactly.`);
+      Alert.alert("Incorrect Confirmation", `Type "${word}" exactly.`);
       return;
     }
 
@@ -201,7 +165,7 @@ export default function SubscriptionScreen({ navigation }) {
 
       setTimeout(() => {
         navigation.navigate("Dashboard");
-      }, 2000);
+      }, 1500);
 
       loadPage();
       setLoadingPlan(null);
@@ -212,9 +176,9 @@ export default function SubscriptionScreen({ navigation }) {
     }
   };
 
-  // -------------------------------------------------------------
-  // LOADING SCREEN
-  // -------------------------------------------------------------
+  // -------------------------------
+  // LOADING VIEW
+  // -------------------------------
   if (loading) {
     return (
       <View style={styles.loading}>
@@ -223,14 +187,14 @@ export default function SubscriptionScreen({ navigation }) {
     );
   }
 
-  // -------------------------------------------------------------
-  // MAIN RENDER
-  // -------------------------------------------------------------
+  // -------------------------------
+  // MAIN UI
+  // -------------------------------
   return (
     <View style={styles.container}>
       <TopBar title="Subscription" subtitle="Manage your plan" showBackButton />
 
-      {/* SUCCESS TOAST */}
+      {/* Success Toast */}
       <Animated.View
         style={[
           styles.successToast,
@@ -250,7 +214,7 @@ export default function SubscriptionScreen({ navigation }) {
         <Text style={styles.successToastText}>Subscription Updated!</Text>
       </Animated.View>
 
-      {/* PLANS LIST */}
+      {/* Plans */}
       <ScrollView contentContainerStyle={styles.content}>
         {packages.map((pkg) => {
           const isActive = activeSub && activeSub.package_id === pkg.id;
@@ -293,7 +257,12 @@ export default function SubscriptionScreen({ navigation }) {
 
                   {(pkg.benefits || []).map((b, i) => (
                     <View key={i} style={styles.benefitRow}>
-                      <Ionicons name="checkmark-circle" size={18} color="#2AB576" style={{ marginRight: 8 }} />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={18}
+                        color="#2AB576"
+                        style={{ marginRight: 8 }}
+                      />
                       <Text style={styles.benefitText}>{b}</Text>
                     </View>
                   ))}
@@ -324,49 +293,51 @@ export default function SubscriptionScreen({ navigation }) {
         })}
       </ScrollView>
 
-      {/* ================= BOTTOM SHEET CONFIRMATION ================= */}
-
+      {/* ---------------- BOTTOM SHEET CONFIRMATION ---------------- */}
       <Modal visible={confirmVisible} transparent animationType="none">
         <Pressable style={styles.overlay} onPress={closeSheet} />
 
-        <PanGestureHandler onGestureEvent={onGesture} onEnded={onGestureEnd}>
-          <AnimatedRe.View style={[styles.bottomSheet, sheetStyle]}>
-            <View style={styles.sheetHandle} />
+        <Animated.View
+          style={[
+            styles.bottomSheet,
+            { transform: [{ translateY: slideAnim }] },
+          ]}
+        >
+          <View style={styles.sheetHandle} />
 
-            <Text style={styles.sheetTitle}>
-              {confirmType === "UPGRADE"
-                ? "Confirm Upgrade"
-                : confirmType === "DOWNGRADE"
-                ? "Confirm Downgrade"
-                : "Confirm Subscription"}
-            </Text>
+          <Text style={styles.sheetTitle}>
+            {confirmType === "UPGRADE"
+              ? "Confirm Upgrade"
+              : confirmType === "DOWNGRADE"
+              ? "Confirm Downgrade"
+              : "Confirm Subscription"}
+          </Text>
 
-            <Text style={styles.sheetDesc}>
-              Type <Text style={{ fontWeight: "bold" }}>"{confirmType}"</Text> to confirm.
-            </Text>
+          <Text style={styles.sheetDesc}>
+            Type <Text style={{ fontWeight: "bold" }}>"{confirmType}"</Text> to confirm.
+          </Text>
 
-            <TextInput
-              style={styles.sheetInput}
-              placeholder={confirmType}
-              placeholderTextColor="#999"
-              value={confirmText}
-              onChangeText={setConfirmText}
-              autoCapitalize="characters"
-            />
+          <TextInput
+            style={styles.sheetInput}
+            placeholder={confirmType}
+            placeholderTextColor="#999"
+            value={confirmText}
+            onChangeText={setConfirmText}
+            autoCapitalize="characters"
+          />
 
-            <TouchableOpacity style={styles.btnConfirm} onPress={processSubscription}>
-              {loadingPlan ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <Text style={styles.btnConfirmText}>Confirm</Text>
-              )}
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.btnConfirm} onPress={processSubscription}>
+            {loadingPlan ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.btnConfirmText}>Confirm</Text>
+            )}
+          </TouchableOpacity>
 
-            <TouchableOpacity style={styles.btnCancel} onPress={closeSheet}>
-              <Text style={styles.btnCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </AnimatedRe.View>
-        </PanGestureHandler>
+          <TouchableOpacity style={styles.btnCancel} onPress={closeSheet}>
+            <Text style={styles.btnCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </Modal>
 
       <BottomNav />
@@ -401,7 +372,7 @@ const styles = StyleSheet.create({
 
   content: { padding: 16, paddingBottom: 140 },
 
-  // PLAN CARD
+  // CARD
   card: {
     backgroundColor: "#FFF",
     padding: 18,
@@ -409,7 +380,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     borderWidth: 1,
     borderColor: "#EEE",
-    elevation: 3,
   },
 
   activeCard: {
@@ -470,13 +440,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // BACKDROP
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
   },
 
-  // BOTTOM SHEET
   bottomSheet: {
     position: "absolute",
     bottom: 0,
@@ -487,7 +455,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
-    elevation: 40,
   },
 
   sheetHandle: {

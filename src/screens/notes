@@ -60,3 +60,304 @@ src/
 │   └── auth.ts
 │
 └── app.jsx
+
+
+Get trascations
+
+GET
+/api/wallets/{wallet_id}/transactions
+Get Wallet Transactions
+
+Get transactions for a wallet
+
+Parameters
+Cancel
+Name	Description
+wallet_id *
+string
+(path)
+03cd96ce-7438-4f52-b740-bf217a1a299c
+page
+integer
+(query)
+Page number
+
+1
+minimum: 1
+limit
+integer
+(query)
+Items per page
+
+10
+maximum: 100
+minimum: 1
+transaction_type
+string | (string | null)
+(query)
+Filter by transaction type
+
+transaction_type
+status
+string | (string | null)
+(query)
+Filter by status
+
+status
+Execute
+Clear
+Responses
+Curl
+
+curl -X 'GET' \
+  'https://zp3vj7b3ur.ap-southeast-1.awsapprunner.com/api/wallets/03cd96ce-7438-4f52-b740-bf217a1a299c/transactions?page=1&limit=10' \
+  -H 'accept: application/json'
+Request URL
+https://zp3vj7b3ur.ap-southeast-1.awsapprunner.com/api/wallets/03cd96ce-7438-4f52-b740-bf217a1a299c/transactions?page=1&limit=10
+Server response
+Code	Details
+200	
+Response body
+Download
+{
+  "success": true,
+  "message": "Retrieved 2 transactions",
+  "data": {
+    "wallet": {
+      "id": "03cd96ce-7438-4f52-b740-bf217a1a299c",
+      "user_id": "080ad367-8917-451b-ae5d-ff7e5acfbd44",
+      "balance": 225,
+      "currency": "ZAR",
+      "wallet_number": "WLT-RUVQJM",
+      "status": "active",
+      "created_at": "2025-12-08T07:32:20.917582",
+      "updated_at": "2025-12-08T13:02:06.169301",
+      "last_transaction_at": "2025-12-08T13:02:06.169318"
+    },
+    "transactions": [
+      {
+        "id": "6aa0c206-6484-45e4-ac5e-b3ed71e17b11",
+        "wallet_id": "03cd96ce-7438-4f52-b740-bf217a1a299c",
+        "transaction_type": "deposit",
+        "amount": 200,
+        "currency": "ZAR",
+        "reference": "Deposit",
+        "description": "Deposit to wallet",
+        "status": "completed",
+        "metadata": {
+          "source": "manual_deposit",
+          "new_balance": 225,
+          "previous_balance": 25
+        },
+        "created_at": "2025-12-08T13:02:06.408888"
+      },
+      {
+        "id": "9f8e1245-b969-4883-94ea-fa00ddf55696",
+        "wallet_id": "03cd96ce-7438-4f52-b740-bf217a1a299c",
+        "transaction_type": "payment",
+        "amount": 75,
+        "currency": "ZAR",
+        "reference": "SUB-934cc463-f08b-4cd7-962a-ece714ed51dc",
+        "description": "Weekly subscription billing",
+        "status": "completed",
+        "metadata": {
+          "source": "cron",
+          "package_id": "934cc463-f08b-4cd7-962a-ece714ed51dc"
+        },
+        "created_at": "2025-12-08T09:02:25.694307"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 2,
+      "total_pages": 1,
+      "has_more": false
+    }
+  }
+}
+Response headers
+ content-length: 1236 
+ content-type: application/json 
+ date: Mon,08 Dec 2025 13:07:02 GMT 
+ server: envoy 
+ x-envoy-upstream-service-time: 1370 
+Responses
+Code	Description	Links
+200	
+Successful Response
+
+Media type
+
+application/json
+Controls Accept header.
+Example Value
+Schema
+"string"
+No links
+422	
+Validation Error
+
+Media type
+
+application/json
+Example Value
+Schema
+{
+  "detail": [
+    {
+      "loc": [
+        "string",
+        0
+      ],
+      "msg": "string",
+      "type": "string"
+    }
+  ]
+}
+
+Withdrawal Screen API Call Example
+
+POST
+/api/wallets/{wallet_id}/withdraw/quick
+Quick Withdraw
+
+Quick withdrawal - simulates Silicon Enterprise integration
+
+Parameters
+Cancel
+Name	Description
+wallet_id *
+string
+(path)
+03cd96ce-7438-4f52-b740-bf217a1a299c
+amount *
+number
+(query)
+Amount to withdraw
+
+100
+currency
+string
+(query)
+Currency code
+
+ZAR
+description
+string | (string | null)
+(query)
+Transaction description
+
+Quick withdrawal
+Execute
+Clear
+Responses
+Curl
+
+curl -X 'POST' \
+  'https://zp3vj7b3ur.ap-southeast-1.awsapprunner.com/api/wallets/03cd96ce-7438-4f52-b740-bf217a1a299c/withdraw/quick?amount=100&currency=ZAR&description=Quick%20withdrawal' \
+  -H 'accept: application/json' \
+  -d ''
+Request URL
+https://zp3vj7b3ur.ap-southeast-1.awsapprunner.com/api/wallets/03cd96ce-7438-4f52-b740-bf217a1a299c/withdraw/quick?amount=100&currency=ZAR&description=Quick%20withdrawal
+Server response
+Code	Details
+200	
+Response body
+Download
+{
+  "success": true,
+  "message": "Withdrawal processed successfully via Silicon Enterprise",
+  "data": {
+    "wallet": {
+      "id": "03cd96ce-7438-4f52-b740-bf217a1a299c",
+      "user_id": "080ad367-8917-451b-ae5d-ff7e5acfbd44",
+      "balance": 125,
+      "currency": "ZAR",
+      "wallet_number": "WLT-RUVQJM",
+      "status": "active",
+      "created_at": "2025-12-08T07:32:20.917582",
+      "updated_at": "2025-12-08T13:17:40.567458",
+      "last_transaction_at": "2025-12-08T13:17:40.56746"
+    },
+    "transaction": {
+      "id": "7691b83b-2806-4bf2-a0fe-512caad1a76c",
+      "wallet_id": "03cd96ce-7438-4f52-b740-bf217a1a299c",
+      "transaction_type": "withdrawal",
+      "amount": 100,
+      "currency": "ZAR",
+      "reference": "SE_20251208_9870",
+      "description": "Quick withdrawal",
+      "status": "completed",
+      "metadata": {
+        "provider": "silicon_enterprise",
+        "processing_time": "instant",
+        "withdrawal_type": "instant",
+        "previous_balance": 225,
+        "provider_response": {
+          "status": "success",
+          "message": "Transfer initiated successfully",
+          "estimated_arrival": "1-2 business days"
+        },
+        "provider_reference": "SE_20251208_9870"
+      },
+      "created_at": "2025-12-08T13:17:40.567424"
+    },
+    "withdrawal_details": {
+      "amount": 100,
+      "currency": "ZAR",
+      "previous_balance": 225,
+      "new_balance": 125,
+      "provider": "Silicon Enterprise",
+      "provider_reference": "SE_20251208_9870",
+      "status": "completed",
+      "estimated_arrival": "1-2 business days",
+      "processing_fee": "0.00",
+      "net_amount": 100
+    }
+  }
+}
+Response headers
+ access-control-allow-credentials: true 
+ access-control-allow-origin: * 
+ connection: close 
+ content-length: 1281 
+ content-type: application/json 
+ date: Mon,08 Dec 2025 13:17:39 GMT 
+ server: envoy 
+ x-envoy-upstream-service-time: 1300 
+Responses
+Code	Description	Links
+200	
+Successful Response
+
+Media type
+
+application/json
+Controls Accept header.
+Example Value
+Schema
+"string"
+No links
+422	
+Validation Error
+
+Media type
+
+application/json
+Example Value
+Schema
+{
+  "detail": [
+    {
+      "loc": [
+        "string",
+        0
+      ],
+      "msg": "string",
+      "type": "string"
+    }
+  ]
+}
+
+using APP_API_URL=https://zp3vj7b3ur.ap-southeast-1.awsapprunner.com/
