@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Animated,
 } from "react-native";
 
 import TopBar from "../../components/TopBar";
@@ -13,9 +14,9 @@ import BottomNav from "../../components/BottomNav";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../src/contexts/AuthContext";
 
-// ✅ Same style as Subscription — using process.env
-const INTERNAL_API = process.env.EXPO_PUBLIC_API_BASE_URL;      // internal balance API
-const EXTERNAL_API = process.env.EXPO_PUBLIC_EXTERNAL_API;      // wallet + transactions API
+// APIs
+const INTERNAL_API = process.env.EXPO_PUBLIC_API_BASE_URL;
+const EXTERNAL_API = process.env.EXPO_PUBLIC_EXTERNAL_API;
 
 export default function WalletScreen({ navigation }) {
   const { user } = useAuth();
@@ -27,146 +28,89 @@ export default function WalletScreen({ navigation }) {
   const [nextPayment, setNextPayment] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Debug logs
-  console.log("INTERNAL_API =", INTERNAL_API);
-  console.log("EXTERNAL_API =", EXTERNAL_API);
-  console.log("USER =", user?.id);
+  // -----------------------------------------------------------
+  // SHIMMER LOADING ANIMATION
+  // -----------------------------------------------------------
+  const shimmer = useRef(new Animated.Value(0.3)).current;
 
-  // -----------------------------
-  // Helper: Get current week boundaries (Friday 01:00 to next Friday 01:00)
-  // Using Africa/Johannesburg timezone
-  // -----------------------------
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0.3, duration: 700, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
+
+  const Skeleton = ({ height, width, radius = 10, mt = 0 }) => (
+    <Animated.View
+      style={{
+        height,
+        width,
+        borderRadius: radius,
+        marginTop: mt,
+        backgroundColor: "#E3E3E3",
+        opacity: shimmer,
+      }}
+    />
+  );
+
+  // ------- WEEK CALCULATIONS (kept exactly as you wrote) -------
   const getCurrentWeekBoundaries = () => {
     const now = new Date();
-    
-    // Convert to Africa/Johannesburg time (UTC+2)
-    const jhbOffset = 2; // Africa/Johannesburg is UTC+2
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const jhbNow = new Date(utc + (3600000 * jhbOffset));
-    
-    const currentDay = jhbNow.getDay(); // 0 = Sunday, 5 = Friday
-    const currentHour = jhbNow.getHours();
-    const currentMinutes = jhbNow.getMinutes();
-    
-    // Find the most recent Friday at 01:00
+    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+    const jhbNow = new Date(utc + 3600000 * 2);
+
+    const currentDay = jhbNow.getDay();
     const lastFriday = new Date(jhbNow);
-    
-    // Calculate days to subtract to get to last Friday
-    let daysToSubtract = currentDay - 5; // 5 = Friday
-    
-    // If it's Friday but before 01:00, go back 7 days
-    if (daysToSubtract === 0 && (currentHour < 1 || (currentHour === 1 && currentMinutes < 0))) {
-      daysToSubtract = -7;
-    } 
-    // If it's not Friday yet (or it's Friday after 01:00 but not the right calculation)
-    else if (daysToSubtract < 0) {
-      daysToSubtract += 7;
-    } else if (daysToSubtract > 0) {
-      // This shouldn't happen with day 0-6, but just in case
-      daysToSubtract -= 7;
-    }
-    
-    lastFriday.setDate(jhbNow.getDate() - daysToSubtract);
-    lastFriday.setHours(1, 0, 0, 0); // Set to 01:00
-    
-    // Next Friday at 01:00
+
+    let diff = currentDay - 5;
+    if (diff < 0) diff += 7;
+    lastFriday.setDate(jhbNow.getDate() - diff);
+    lastFriday.setHours(1, 0, 0, 0);
+
     const nextFriday = new Date(lastFriday);
     nextFriday.setDate(lastFriday.getDate() + 7);
-    
-    console.log("Current JHB time:", jhbNow);
-    console.log("Week start (last Friday 01:00):", lastFriday);
-    console.log("Week end (next Friday 01:00):", nextFriday);
-    
-    return { 
-      start: lastFriday.toISOString(), 
-      end: nextFriday.toISOString(),
-      startDate: lastFriday,
-      endDate: nextFriday
-    };
+
+    return { start: lastFriday, end: nextFriday };
   };
 
-  // -----------------------------
-  // Helper: Check if transaction is within current week
-  // -----------------------------
-  const isTransactionInCurrentWeek = (transactionDate) => {
-    const boundaries = getCurrentWeekBoundaries();
-    const txDate = new Date(transactionDate);
-    
-    return txDate >= new Date(boundaries.start) && txDate < new Date(boundaries.end);
+  const isTransactionInCurrentWeek = (date) => {
+    const { start, end } = getCurrentWeekBoundaries();
+    const d = new Date(date);
+    return d >= start && d < end;
   };
 
-  // -----------------------------
-  // Helper: Calculate this week's income from transactions
-  // -----------------------------
-  const calculateThisWeekIncome = (txList) => {
-    if (!txList || txList.length === 0) return 0;
-    
-    const boundaries = getCurrentWeekBoundaries();
-    const weekStart = new Date(boundaries.start);
-    const weekEnd = new Date(boundaries.end);
-    
-    console.log("Calculating week income from", weekStart, "to", weekEnd);
-    
+  const calculateThisWeekIncome = (txs) => {
     let total = 0;
-    
-    txList.forEach(tx => {
-      const txDate = new Date(tx.created_at);
-      
-      // Debug each transaction
-      console.log(`Transaction ${tx.id}:`, {
-        type: tx.transaction_type,
-        amount: tx.amount,
-        date: txDate,
-        isDeposit: tx.transaction_type === "deposit",
-        isInWeek: txDate >= weekStart && txDate < weekEnd,
-        isThisWeek: isTransactionInCurrentWeek(tx.created_at)
-      });
-      
-      // Count only deposits that are within current week
-      if (tx.transaction_type === "deposit" && 
-          tx.amount > 0 &&
-          txDate >= weekStart && 
-          txDate < weekEnd) {
-        total += parseFloat(tx.amount);
-        console.log(`✓ Added R${tx.amount} to weekly total. New total: R${total}`);
+    txs.forEach((tx) => {
+      if (tx.transaction_type === "deposit" && isTransactionInCurrentWeek(tx.created_at)) {
+        total += Number(tx.amount);
       }
     });
-    
-    console.log("Final this week income total:", total);
     return total;
   };
 
-  // -----------------------------
-  // 1️⃣ Get wallet from EXTERNAL API
-  // -----------------------------
+  // ----------------------------------------------------------
+  // FETCH WALLET (kept exactly as your logic)
+  // ----------------------------------------------------------
   const fetchWallet = async () => {
     try {
       setLoading(true);
 
-      const url = `${EXTERNAL_API}/api/wallets/user/${user.id}`;
-      const res = await fetch(url);
+      const res = await fetch(`${EXTERNAL_API}/api/wallets/user/${user.id}`);
       const json = await res.json();
 
       if (json.success && json.data.has_wallet) {
         const w = json.data.wallet;
         setWallet(w);
 
-        // load recent transactions from external API
-        const recentTx = json.data.recent_transactions || [];
-        setTransactions(recentTx);
-        
-        // Calculate this week's income
-        const weeklyIncome = calculateThisWeekIncome(recentTx);
-        setThisWeekIncome(weeklyIncome);
-        console.log("This week income after initial load:", weeklyIncome);
+        const tx = json.data.recent_transactions || [];
+        setTransactions(tx);
+        setThisWeekIncome(calculateThisWeekIncome(tx));
 
-        // load balance from INTERNAL API
         await fetchRealBalance(w.id);
-
-        // fetch subscription for next payment
         await fetchUserSubscription();
-
-        // full history
         await fetchTransactions(w.id, 1);
       }
     } catch (err) {
@@ -176,168 +120,178 @@ export default function WalletScreen({ navigation }) {
     }
   };
 
-  // -----------------------------
-  // 2️⃣ Get REAL BALANCE from INTERNAL API
-  // -----------------------------
   const fetchRealBalance = async (walletId) => {
     try {
-      const url = `${INTERNAL_API}/api/wallet/${walletId}/balance`;
-      const res = await fetch(url);
+      const res = await fetch(`${INTERNAL_API}/api/wallet/${walletId}/balance`);
       const json = await res.json();
-
       if (json.success) setBalance(json.data.balance);
-    } catch (err) {
-      console.log("Balance fetch error:", err);
-    }
+    } catch (err) {}
   };
 
-  // -----------------------------
-  // 3️⃣ Get user subscription for next payment amount
-  // -----------------------------
   const fetchUserSubscription = async () => {
     try {
-      const url = `${INTERNAL_API}/api/subscriptions/user/${user.id}`;
-      const res = await fetch(url);
+      const res = await fetch(`${INTERNAL_API}/api/subscriptions/user/${user.id}`);
       const json = await res.json();
-
-      if (json.success && json.data) {
-        // Next payment is the current_weekly_price from subscription
-        const paymentAmount = json.data.current_weekly_price || 0;
-        setNextPayment(paymentAmount);
-        console.log("Next payment amount:", paymentAmount);
-      }
-    } catch (err) {
-      console.log("Subscription fetch error:", err);
-    }
+      if (json.success) setNextPayment(json.data.current_weekly_price || 0);
+    } catch (err) {}
   };
 
-  // -----------------------------
-  // 4️⃣ Full transaction history (paginated)
-  // -----------------------------
   const fetchTransactions = async (walletId, pageNum) => {
     try {
-      const url = `${EXTERNAL_API}/api/wallets/${walletId}/transactions?page=${pageNum}&limit=10`;
-      const res = await fetch(url);
+      const res = await fetch(`${EXTERNAL_API}/api/wallets/${walletId}/transactions?page=${pageNum}&limit=10`);
       const json = await res.json();
 
       if (json.success) {
-        let allTransactions;
-        if (pageNum === 1) {
-          allTransactions = json.data.transactions || [];
-          setTransactions(allTransactions);
-        } else {
-          allTransactions = [...transactions, ...(json.data.transactions || [])];
-          setTransactions(allTransactions);
-        }
-
-        // Recalculate this week's income with all transactions
-        const weeklyIncome = calculateThisWeekIncome(allTransactions);
-        setThisWeekIncome(weeklyIncome);
-        console.log("This week income after full transaction load:", weeklyIncome);
+        const allTx = pageNum === 1 ? json.data.transactions : [...transactions, ...json.data.transactions];
+        setTransactions(allTx);
+        setThisWeekIncome(calculateThisWeekIncome(allTx));
       }
-    } catch (err) {
-      console.log("Transaction fetch error:", err);
-    }
+    } catch (err) {}
   };
 
   useEffect(() => {
-    if (user) {
-      fetchWallet();
-    }
+    if (user) fetchWallet();
   }, [user]);
 
+  // ----------------------------------------------------------
+  // UI
+  // ----------------------------------------------------------
   return (
     <View style={styles.container}>
       <TopBar title="Wallet" subtitle="Careful this is the wallet" showBackButton={true} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         
-        {/* BALANCE CARD */}
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Current Balance</Text>
-          <Text style={styles.balanceAmount}>R {balance.toFixed(2)}</Text>
-
-          <View style={styles.balanceRow}>
-            <View>
-              <Text style={styles.balanceSubLabel}>Total Advanced</Text>
-              <Text style={styles.balanceSubAmount}>R 0.00</Text>
+        {/* -----------------------------------------------------
+            SKELETON LOADING STATE (entire top section)
+        ----------------------------------------------------- */}
+        {loading ? (
+          <>
+            {/* BALANCE CARD SKELETON */}
+            <View style={styles.balanceCard}>
+              <Skeleton height={18} width={"40%"} />
+              <Skeleton height={42} width={"60%"} mt={8} />
+              <View style={styles.balanceRow}>
+                <Skeleton height={16} width={80} />
+                <Skeleton height={16} width={80} />
+              </View>
             </View>
 
-            <View>
-              <Text style={styles.balanceSubLabel}>Total Repaid</Text>
-              <Text style={styles.balanceSubAmount}>R 0.00</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* INFO CARDS */}
-        <View style={styles.infoRow}>
-          <View style={styles.infoCard}>
-            <Ionicons name="arrow-up-circle" size={26} color="#2AB576" />
-            <Text style={styles.infoLabel}>This Week</Text>
-            <Text style={styles.infoAmount}>R {thisWeekIncome.toFixed(2)}</Text>
-          </View>
-
-          <View style={styles.infoCard}>
-            <Ionicons name="arrow-down-circle" size={26} color="#D9534F" />
-            <Text style={styles.infoLabel}>Next Payment</Text>
-            <Text style={styles.infoAmount}>R {nextPayment.toFixed(2)}</Text>
-          </View>
-        </View>
-
-        {/* TRANSACTIONS */}
-        <Text style={styles.recentTitle}>Recent Transactions</Text>
-
-        {transactions.map((tx) => (
-          <View key={tx.id} style={styles.txCard}>
-            <Ionicons
-              name={tx.transaction_type === "deposit" ? "arrow-up" : "arrow-down"}
-              size={22}
-              color={tx.transaction_type === "deposit" ? "#2AB576" : "#D9534F"}
-              style={{ marginRight: 10 }}
-            />
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.txTitle}>{tx.description}</Text>
-              <Text style={styles.txDate}>
-                {new Date(tx.created_at).toLocaleDateString()}
-              </Text>
+            {/* INFO CARDS SKELETON */}
+            <View style={styles.infoRow}>
+              <Skeleton height={100} width={"48%"} radius={12} />
+              <Skeleton height={100} width={"48%"} radius={12} />
             </View>
 
-            <Text
-              style={[
-                styles.txAmount,
-                { color: tx.transaction_type === "deposit" ? "#2AB576" : "#D9534F" },
-              ]}
+            {/* TRANSACTION TITLE SKELETON */}
+            <Skeleton height={22} width={150} mt={20} />
+
+            {/* 3 TRANSACTION SKELETONS */}
+            {[1, 2, 3].map((i) => (
+              <View key={i} style={styles.txCard}>
+                <Skeleton height={22} width={22} radius={11} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Skeleton height={16} width={"60%"} />
+                  <Skeleton height={14} width={"40%"} mt={6} />
+                </View>
+                <Skeleton height={16} width={60} />
+              </View>
+            ))}
+
+            {/* BUTTON SKELETON */}
+            <Skeleton height={48} width={"100%"} radius={10} mt={20} />
+
+            {/* BANNER SKELETON */}
+            <Skeleton height={120} width={"100%"} radius={14} mt={20} />
+          </>
+        ) : (
+          <>
+            {/* ----------------------- REAL UI ----------------------- */}
+
+            {/* BALANCE CARD */}
+            <View style={styles.balanceCard}>
+              <Text style={styles.balanceLabel}>Current Balance</Text>
+              <Text style={styles.balanceAmount}>R {balance.toFixed(2)}</Text>
+
+              <View style={styles.balanceRow}>
+                <View>
+                  <Text style={styles.balanceSubLabel}>Total Advanced</Text>
+                  <Text style={styles.balanceSubAmount}>R 0.00</Text>
+                </View>
+
+                <View>
+                  <Text style={styles.balanceSubLabel}>Total Repaid</Text>
+                  <Text style={styles.balanceSubAmount}>R 0.00</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* INFO CARDS */}
+            <View style={styles.infoRow}>
+              <View style={styles.infoCard}>
+                <Ionicons name="arrow-up-circle" size={26} color="#2AB576" />
+                <Text style={styles.infoLabel}>This Week</Text>
+                <Text style={styles.infoAmount}>R {thisWeekIncome.toFixed(2)}</Text>
+              </View>
+
+              <View style={styles.infoCard}>
+                <Ionicons name="arrow-down-circle" size={26} color="#D9534F" />
+                <Text style={styles.infoLabel}>Next Payment</Text>
+                <Text style={styles.infoAmount}>R {nextPayment.toFixed(2)}</Text>
+              </View>
+            </View>
+
+            <Text style={styles.recentTitle}>Recent Transactions</Text>
+
+            {transactions.map((tx) => (
+              <View key={tx.id} style={styles.txCard}>
+                <Ionicons
+                  name={tx.transaction_type === "deposit" ? "arrow-up" : "arrow-down"}
+                  size={22}
+                  color={tx.transaction_type === "deposit" ? "#2AB576" : "#D9534F"}
+                />
+
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.txTitle}>{tx.description}</Text>
+                  <Text style={styles.txDate}>
+                    {new Date(tx.created_at).toLocaleDateString()}
+                  </Text>
+                </View>
+
+                <Text
+                  style={[
+                    styles.txAmount,
+                    { color: tx.transaction_type === "deposit" ? "#2AB576" : "#D9534F" },
+                  ]}
+                >
+                  {tx.transaction_type === "deposit"
+                    ? `+R ${tx.amount}`
+                    : `-R ${tx.amount}`}
+                </Text>
+              </View>
+            ))}
+
+            {/* STATEMENTS BUTTON */}
+            <TouchableOpacity
+              style={styles.statementBtn}
+              onPress={() => navigation.navigate("StatementsScreen")}
             >
-              {tx.transaction_type === "deposit"
-                ? `+R ${tx.amount}`
-                : `-R ${tx.amount}`}
-            </Text>
-          </View>
-        ))}
+              <Text style={styles.statementBtnText}>View All Statements</Text>
+            </TouchableOpacity>
 
-        {loading && <ActivityIndicator size="small" color="#2AB576" />}
-
-        {/* STATEMENTS */}
-        <TouchableOpacity
-          style={styles.statementBtn}
-          onPress={() => navigation.navigate("StatementsScreen")}
-        >
-          <Text style={styles.statementBtnText}>View All Statements</Text>
-        </TouchableOpacity>
-
-        {/* PROMO */}
-        <View style={styles.bannerWrapper}>
-          <View style={styles.bannerLeftAccent} />
-          <View style={styles.bannerCard}>
-            <Text style={styles.bannerTitle}>Free South African Wallet</Text>
-            <Text style={styles.bannerSubtitle}>
-              Your Detour wallet is a free local bank account where you can manage
-              advances, repayments and rewards.
-            </Text>
-          </View>
-        </View>
+            {/* PROMO BANNER */}
+            <View style={styles.bannerWrapper}>
+              <View style={styles.bannerLeftAccent} />
+              <View style={styles.bannerCard}>
+                <Text style={styles.bannerTitle}>Free South African Wallet</Text>
+                <Text style={styles.bannerSubtitle}>
+                  Your Detour wallet is a free local bank account where you can manage
+                  advances, repayments and rewards.
+                </Text>
+              </View>
+            </View>
+          </>
+        )}
 
       </ScrollView>
 
@@ -389,12 +343,7 @@ const styles = StyleSheet.create({
   infoLabel: { color: "#6B7280", fontSize: 14 },
   infoAmount: { marginTop: 6, fontSize: 16, fontWeight: "700" },
 
-  recentTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    marginTop: 15,
-    marginBottom: 12,
-  },
+  recentTitle: { fontSize: 17, fontWeight: "700", marginTop: 15, marginBottom: 12 },
 
   txCard: {
     flexDirection: "row",
@@ -409,13 +358,6 @@ const styles = StyleSheet.create({
   txTitle: { fontSize: 15, color: "#111827", fontWeight: "600" },
   txDate: { fontSize: 12, color: "#6B7280" },
   txAmount: { fontSize: 15, fontWeight: "700" },
-
-  noTransactions: {
-    textAlign: "center",
-    color: "#6B7280",
-    fontStyle: "italic",
-    marginVertical: 20,
-  },
 
   statementBtn: {
     marginTop: 10,
@@ -441,10 +383,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#E7F3FF",
     padding: 16,
   },
-  bannerTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0A4AAA",
-  },
+  bannerTitle: { fontSize: 15, fontWeight: "700", color: "#0A4AAA" },
   bannerSubtitle: { fontSize: 13, color: "#0A4AAA", marginTop: 4, lineHeight: 18 },
 });

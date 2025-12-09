@@ -1,5 +1,5 @@
 // src/screens/DashboardScreen.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Animated,
 } from "react-native";
 import TopBar from "../../components/TopBar";
 import BottomNav from "../../components/BottomNav";
@@ -30,6 +31,41 @@ export default function DashboardScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // -----------------------------------------------------
+  // SKELETON ANIMATION (glowing shimmer)
+  // -----------------------------------------------------
+  const shimmer = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmer, {
+          toValue: 0.3,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const Skeleton = ({ height, width, radius = 8 }: any) => (
+    <Animated.View
+      style={{
+        height,
+        width,
+        opacity: shimmer,
+        backgroundColor: "#E2E2E2",
+        borderRadius: radius,
+        marginBottom: 10,
+      }}
+    />
+  );
+
   // -------------------------------
   // CHECK ACTIVE SUBSCRIPTION
   // -------------------------------
@@ -49,7 +85,7 @@ export default function DashboardScreen({ navigation }) {
         return false;
       }
 
-      return !!data; // true if subscription exists
+      return !!data;
     } catch (error) {
       console.error("Subscription check exception:", error);
       return false;
@@ -119,33 +155,23 @@ export default function DashboardScreen({ navigation }) {
   }, [user?.id]);
 
   // -------------------------------
-  // FLOW CONTROL (KYC + SUBSCRIPTION)
+  // FLOW CONTROL
   // -------------------------------
   useFocusEffect(
     React.useCallback(() => {
       const runChecks = async () => {
         try {
-          // 1. KYC CHECK
           const kycResult = await checkKYCStatus();
 
           if (!kycResult.isComplete) {
-            console.log("KYC incomplete → redirecting to KYC");
-            navigation.reset({
-              index: 0,
-              routes: [{ name: "KYC" }],
-            });
+            navigation.reset({ index: 0, routes: [{ name: "KYC" }] });
             return;
           }
 
-          // 2. SUBSCRIPTION CHECK
           const hasSub = await checkUserSubscription();
 
           if (!hasSub) {
-            console.log("No subscription → redirecting to Subscription");
-            navigation.reset({
-              index: 0,
-              routes: [{ name: "Subscription" }],
-            });
+            navigation.reset({ index: 0, routes: [{ name: "Subscription" }] });
             return;
           }
         } catch (error) {
@@ -157,7 +183,6 @@ export default function DashboardScreen({ navigation }) {
     }, [navigation, checkKYCStatus])
   );
 
-  // Initial load
   useEffect(() => {
     fetchWallet();
   }, []);
@@ -170,7 +195,6 @@ export default function DashboardScreen({ navigation }) {
   // -------------------------------
   // UI HELPERS
   // -------------------------------
-
   const formatBalance = (balance: string) => {
     const amount = parseFloat(balance || "0");
     return `R ${amount.toFixed(2)}`;
@@ -206,16 +230,18 @@ export default function DashboardScreen({ navigation }) {
         <View style={styles.walletCard}>
           {isLoading ? (
             <>
-              <Text style={styles.balanceText}>Loading...</Text>
+              <Skeleton height={35} width={160} />
               <View style={styles.divider} />
+
               <View style={styles.walletRow}>
                 <View>
-                  <Text style={styles.walletLabel}>Available Advance</Text>
-                  <Text style={styles.walletValueGreen}>Loading...</Text>
+                  <Skeleton height={14} width={120} />
+                  <Skeleton height={18} width={80} />
                 </View>
+
                 <View>
-                  <Text style={styles.walletLabel}>Reward Points</Text>
-                  <Text style={styles.walletValue}>Loading...</Text>
+                  <Skeleton height={14} width={120} />
+                  <Skeleton height={18} width={60} />
                 </View>
               </View>
             </>
@@ -289,9 +315,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="shield-checkmark-outline" size={26} color="#2AB576" />
           <View style={styles.benefitInfo}>
             <Text style={styles.benefitTitle}>Health & Safety</Text>
-            <Text style={styles.benefitSubtitle}>
-              24/7 emergency & hospital cover
-            </Text>
+            <Text style={styles.benefitSubtitle}>24/7 emergency & hospital cover</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
@@ -303,9 +327,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="gift-outline" size={26} color="#D6A300" />
           <View style={styles.benefitInfo}>
             <Text style={styles.benefitTitle}>Rewards</Text>
-            <Text style={styles.benefitSubtitle}>
-              Earn on fuel, redeem for essentials
-            </Text>
+            <Text style={styles.benefitSubtitle}>Earn fuel points & redeem</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
@@ -314,9 +336,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="flame-outline" size={26} color="#4CAF50" />
           <View style={styles.benefitInfo}>
             <Text style={styles.benefitTitle}>Detour Energy</Text>
-            <Text style={styles.benefitSubtitle}>
-              Refuel at major brands nationwide
-            </Text>
+            <Text style={styles.benefitSubtitle}>Refuel nationwide</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
@@ -328,9 +348,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="cart-outline" size={26} color="#2AB576" />
           <View style={styles.benefitInfo}>
             <Text style={styles.benefitTitle}>Buy</Text>
-            <Text style={styles.benefitSubtitle}>
-              Airtime, data, and essential bundles
-            </Text>
+            <Text style={styles.benefitSubtitle}>Airtime, data, essentials</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
@@ -342,9 +360,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="document-text-outline" size={26} color="#2AB576" />
           <View style={styles.benefitInfo}>
             <Text style={styles.benefitTitle}>Statements</Text>
-            <Text style={styles.benefitSubtitle}>
-              View transaction & wallet history
-            </Text>
+            <Text style={styles.benefitSubtitle}>View history</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
@@ -356,9 +372,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="cash-outline" size={26} color="#008CFF" />
           <View style={styles.benefitInfo}>
             <Text style={styles.benefitTitle}>Withdrawal</Text>
-            <Text style={styles.benefitSubtitle}>
-              Cashout to your bank account
-            </Text>
+            <Text style={styles.benefitSubtitle}>Cashout instantly</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
@@ -370,9 +384,7 @@ export default function DashboardScreen({ navigation }) {
           <Ionicons name="repeat-outline" size={26} color="#0A4AAA" />
           <View style={styles.benefitInfo}>
             <Text style={styles.benefitTitle}>Subscription</Text>
-            <Text style={styles.benefitSubtitle}>
-              Update your current subscription
-            </Text>
+            <Text style={styles.benefitSubtitle}>Update your plan</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#999" />
         </TouchableOpacity>
@@ -531,4 +543,3 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
-
